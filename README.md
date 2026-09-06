@@ -46,16 +46,18 @@ The internal routing model is deliberately core-neutral. UI rules are compiled t
 
 This first foundation contains:
 
-- Flutter application shell for Android/Linux product development.
-- Core abstraction and process-based sing-box runner for Linux development.
+- Flutter Material 3 application shell with adaptive Android/Linux navigation.
+- Core lifecycle abstraction and process-based sing-box runner for Linux development.
 - Core-neutral routing model and sing-box route-rule compiler.
-- Android application-routing model and local smart-suggestion engine.
-- Profile input detection layer for share links, subscription URLs, sing-box JSON and Clash/Mihomo YAML.
-- Architecture, routing and implementation roadmap documentation.
-- Unit tests for routing compilation.
-- CI for formatting/analyze/tests.
+- Android native VPN allow/deny policy model plus compatible core TUN package filtering.
+- Local explainable smart-app suggestion baseline.
+- Profile input detection for share links, subscription URLs, sing-box JSON and Clash/Mihomo YAML.
+- Typed VLESS parser with TLS, Reality, uTLS fingerprint, WebSocket, gRPC, HTTPUpgrade and XHTTP import preservation.
+- Stable-backend VLESS -> sing-box outbound compiler. XHTTP remains capability-gated for an extended backend rather than being silently miscompiled.
+- Architecture, routing, protocol and implementation-roadmap documentation.
+- Unit tests and GitHub Actions CI for format/analyze/tests.
 
-Platform shells and native Android VPN/core integration are intentionally the next step; the domain model is already shaped so those integrations do not leak into the UI.
+Native Android `VpnService`/mobile-core integration and generated Android/Linux Flutter platform shells are the next implementation step. The domain model is already shaped so native details do not leak into profiles, routing or the UI.
 
 ## Core strategy
 
@@ -67,6 +69,7 @@ See:
 
 - `docs/ARCHITECTURE.md`
 - `docs/ROUTING.md`
+- `docs/PROTOCOLS.md`
 - `docs/ROADMAP.md`
 - `docs/LICENSING.md`
 
@@ -81,7 +84,7 @@ flutter analyze
 flutter test
 ```
 
-When the native shells are committed, the first command is no longer necessary.
+The same bootstrap is available as `tool/bootstrap.sh`. When the generated native shells are committed, `flutter create` is no longer necessary.
 
 ## Project direction
 
