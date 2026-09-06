@@ -72,12 +72,15 @@ class SingBoxRoutingCompiler {
         }
         result['action'] = 'route';
         result['outbound'] = tag;
+        break;
       case RouteActionType.direct:
         result['action'] = 'route';
         result['outbound'] = 'direct';
+        break;
       case RouteActionType.block:
         result['action'] = 'reject';
         result['method'] = 'drop';
+        break;
     }
 
     return result;
