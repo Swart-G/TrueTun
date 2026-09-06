@@ -1,269 +1,130 @@
-# TrueTun implementation roadmap
+# План реализации TrueTun для ИИ-агентов
 
-The roadmap is ordered by dependency, not by visual priority. The goal is to reach a reliable end-to-end VLESS connection early and then add breadth without destabilizing the connection path.
+Статус всех задач ниже — **не выполнено в рамках этого документационного пакета**. Частичные исходные компоненты перечислены в baseline. План задаёт зависимости и проверяемые результаты, а не разрешает автоматически писать приложение целиком. Каждый этап выполнять отдельным поручением/ограниченным PR.
 
-## Phase 0 — Foundation
+## Milestones
 
-Status: **started in repository**
+| Milestone | Состав | Пользовательский результат |
+|---|---|---|
+| M0: доказанная основа | T00, T01, T02 | Зафиксированные capabilities/контракты, хранилище и полный проверяемый plan |
+| M1: одна реальная ссылка | T03A, T03L, T05 | VLESS TUN + DNS, Connect/Stop, recovery на обеих платформах |
+| M2: личный рабочий клиент | T04, T06, T07, T08 | Подписки, editor rules, Android app lists и suggestions, usable UI |
+| M3: расширение | T10, T11 | Другие protocols, XHTTP если gate пройден, groups/failover |
+| M4: выпуск | T09, T12 | Device evidence, signing/package/migration и документированные ограничения |
 
-- [x] Flutter app shell.
-- [x] Core lifecycle abstraction.
-- [x] Linux process-based sing-box adapter for development.
-- [x] Core-neutral routing models.
-- [x] sing-box route-rule compiler baseline.
-- [x] Android include/exclude app-policy model.
-- [x] Local smart-app suggestion baseline.
-- [x] Profile input type detector.
-- [x] Architecture/routing docs and tests.
-- [ ] Generate and commit Android/Linux Flutter platform shells.
-- [ ] Add persistence/state-management layer.
+DNS baseline, secrets/redaction и lifecycle failure handling входят в M0/M1. T09 углубляет проверки, не откладывает всю надёжность до конца. XHTTP investigation начинается T00, чтобы не обнаружить неподходящий backend после создания всего UI.
 
-Acceptance: domain tests pass and the UI shell runs on both targets.
+## Зависимости
 
-## Phase 1 — Core packaging and native platform bridge
-
-### Linux
-
-- Package a pinned core binary for `x86_64` and `aarch64`.
-- Resolve core path through an installation service rather than PATH in production.
-- Add config/runtime directories under the appropriate XDG paths.
-- Add an unprivileged GUI + narrow privileged helper using Polkit.
-- Implement TUN start/stop and clean rollback of routes on crash.
-- Add system tray connection control.
-
-### Android
-
-- Create `VpnService` and foreground notification.
-- Integrate a mobile/library build of the chosen sing-box-compatible core.
-- Bridge lifecycle/events to Flutter with a MethodChannel/EventChannel or generated Pigeon API.
-- Pass/own the TUN file descriptor correctly.
-- Handle VPN permission, revoke, app kill and device reboot.
-- Exclude/protect TrueTun control traffic to prevent loops.
-
-Acceptance: a hardcoded outbound can establish a TUN connection on Android and Linux, survive reconnect, and stop without leaving broken routes.
-
-## Phase 2 — VLESS end-to-end MVP
-
-Priority: **highest protocol priority**
-
-Implement `vless://` parsing into a normalized `ProxyNode` model:
-
-- UUID
-- host / port
-- TLS on/off
-- SNI
-- ALPN
-- Reality public key / short ID / fingerprint
-- flow (`xtls-rprx-vision` where applicable)
-- transport: TCP, WebSocket, gRPC, HTTPUpgrade and capability-gated extended transports
-- host/path/service name
-- UDP/package options supported by the core
-
-Then implement:
-
-- one-node config generation
-- direct outbound
-- TUN inbound
-- DNS baseline
-- validation before start
-- latency test
-- connect/disconnect UI
-- redacted diagnostics
-
-Acceptance: paste one VLESS link -> connect -> DNS/TCP/UDP work -> reconnect works on both platforms.
-
-## Phase 3 — Profiles and subscriptions
-
-### Single links
-
-Add parsers in priority order:
-
-1. VLESS
-2. VMess
-3. Trojan
-4. Shadowsocks
-5. Hysteria2
-6. TUIC
-7. SSH
-8. WireGuard
-9. other core-supported schemes
-
-### Remote subscriptions
-
-Pipeline:
-
-```text
-URL -> HTTP fetch -> detect format -> parse -> normalize -> validate -> transactionally replace profile
+```mermaid
+flowchart TD
+  T00["T00: Core feasibility"] --> T01["T01: App and storage"]
+  T01 --> T02["T02: Plans and supervisor contracts"]
+  T02 --> A["T03A: Android runtime"]
+  T02 --> L["T03L: Linux runtime"]
+  A --> T05["T05: VLESS TUN E2E"]
+  L --> T05
+  T02 --> T04["T04: Routing compiler and editor"]
+  T01 --> T06["T06: Subscriptions"]
+  A --> T07["T07: App policy and suggestions"]
+  T05 --> T08["T08: Product integration"]
+  T04 --> T08
+  T06 --> T08
+  T07 --> T08
+  T08 --> T09["T09: Hardening"]
+  T05 --> T10["T10: Protocol breadth"]
+  T08 --> T11["T11: Groups and failover"]
+  T09 --> T12["T12: Release"]
+  T10 --> T12
+  T11 --> T12
 ```
 
-Formats:
+T10/T11 не обязательны для узкого VLESS-only первого выпуска: T12 может исключить их features из обещаний и support matrix. Полный M3/M4 scope должен быть явно выбран. Diagram не поручает параллельную работу.
 
-- plain share-link list
-- base64 share-link list
-- sing-box JSON
-- Clash/Mihomo YAML
-- common panel subscription outputs
+## T00 — Feasibility и pin ядра
 
-Features:
+Вход: baseline, PROTOCOLS, ADR-002/009/010. Результат: exact source commit/version/build flags/ABI; capabilities evidence; Android binding signatures/FD/protect contract; Linux TUN ownership proof; XHTTP options report; SDK proposal. Первым PR может быть только исследование и fixtures plan, если реализация ещё не поручена. При порученной реализации disposable proof-of-concept не выдавать production кодом.
 
-- custom user agent/header support where needed
-- ETag / Last-Modified
-- update interval
-- manual update
-- profile traffic/expiry metadata from response headers
-- last-known-good subscription snapshot
-- duplicate-node detection using stable fingerprints
+Подзадачи: T00.1 сравнить точные builds; T00.2 Android API spike; T00.3 Linux FD/helper feasibility; T00.4 logical-rule truth tables; T00.5 dependency/license inventory. DoD: воспроизводимая команда/check evidence или точный blocker и ADR alternative. Не брать latest на веру, не менять GUI/лицензию.
 
-Acceptance: refresh cannot destroy the active profile if the new response is malformed.
+## T01 — Foundation, IDs и storage
 
-## Phase 4 — Routing editor comparable to Mihomo
+Зависит T00. Создать native Flutter shells контролируемым diff; pin SDK/dependencies, выбрать Riverpod/Drift/Pigeon или обосновать замену. Внедрить domain IDs/unions/ports, SQLite v1, encrypted secret store, CAS revisions, app composition root. Разделить текущую app policy и serialization. Не перестраивать все экраны.
 
-Implement the visual ordered editor and persistence.
+DoD: startup/read/write на обеих платформах; restart сохраняет профиль; секрет отсутствует в SQLite plaintext/logs; CAS conflict и pending secret crash recovery; analyze/tests. Отдельный PR для generated shells, чтобы review не терял смысл за generated diff.
 
-Matchers:
+## T02 — Compiler snapshot и lifecycle contracts
 
-- domain / suffix / keyword / regex
-- IP/CIDR
-- source IP/CIDR
-- ports/ranges
-- network/protocol
-- rule sets
-- Android package
-- Linux process name/path
+Зависит T01. Реализовать immutable snapshot assembler, build capability report, complete minimal config plan (VLESS node, direct, TUN intent, DNS baseline, final route), secret materializer и runtime port. Ввести supervisor state machine/test double и structured errors. Текущий Process adapter обернуть development facade, устранить false ready и unbounded stop в своей задаче.
 
-Actions:
+DoD: deterministic plan, missing references/capabilities fail before start, exact core check, concurrency traces SES-01 в fake runtime, safe errors/redaction. Native TUN readiness пока не считается реализованной.
 
-- proxy node/group
-- direct
-- block
+## T03A — Android integration
 
-UX:
+Зависит T02 и Android gate T00. Подзадачи: manifest/consent/notification; private IPC и service process; native core/protect/FD; inspect/rebind/recovery capsule; network callbacks/stop/revoke. Реализовать минимальный empty-list guard уже здесь, даже до UI app picker.
 
-- drag reorder
-- enable/disable
-- duplicate
-- search/filter
-- human-readable summary
-- generated-config preview
-- validation warnings
-- final default route separate from ordinary rules
+DoD: сервис стартует/останавливается с one-node test plan, notification Stop работает, UI kill не теряет state, revoke не вызывает loops, descriptor cleanup проверен. Physical Android evidence; emulator-only работу пометить incomplete для release.
 
-Import a useful Mihomo subset such as `DOMAIN`, `DOMAIN-SUFFIX`, `DOMAIN-KEYWORD`, `IP-CIDR`, `PROCESS-NAME`, `RULE-SET`, `MATCH`, then map it into TrueTun models.
+## T03L — Linux integration
 
-Acceptance: rule order is deterministic and unit-tested; platform-incompatible rules cannot silently become match-all.
+Зависит T02 и Linux gate T00. Подзадачи: typed helper IPC/Polkit; verified worker artifact; TUN/DNS ownership; resource journal/reconcile; current-user isolation; native install manifest. Непривилегированный GUI сохраняется.
 
-## Phase 5 — Android app whitelist/blacklist + smart selection
+DoD: TUN start/stop с тестовым plan; denied action безопасен; crash cleanup не трогает чужие resources; controlled DNS restore; fixed binary/hash. Dev mixed proxy не закрывает этот этап.
 
-### Installed-app provider
+## T04 — Routing и rule sets
 
-Native Android service returns:
+Зависит T02; runtime semantic verification после T03. Подзадачи: AST/reference evaluator; exact backend logical compiler; scope/capability validation; ordered editor+final action; source↔generated mapping; bounded rule-set manager; Mihomo subset importer.
 
-- package name
-- label
-- icon handle/cache key
-- system/user app flag
-- category where available
-- launchable status
+DoD: RTE-01..05; no silent field drop; stable NodeId/GroupId; cached asset offline connect; corrupted update сохраняет active asset. Rule-set network fetch не входит compiler. Basic rule editor достаточно сначала для domain/CIDR/port; остальные predicates включаются только по evidence.
 
-### Product modes
+## T05 — VLESS end-to-end
 
-- **All through proxy except selected** -> TUN exclude list.
-- **Only selected through proxy** -> TUN include list.
+Зависит T03A/T03L, minimal compiler T02. Исправить VLESS ambiguous/unknown fields по fixture contract. Соединить paste→preview→save→select→Connect→Stop. DNS bootstrap, IPv6 policy, local readiness и health diagnostics включены сразу.
 
-Add search, multi-select, select all user apps, hide system apps, and per-app advanced route action.
+DoD: IMP-01/02/03, DNS-01/02, SES-01/02 на устройствах; captured test app TCP/DNS/UDP в обе стороны; 30 min transfer; Wi-Fi change; no false Connected. Одной Reality TCP комбинации достаточно для первого среза; WS/gRPC/HTTPUpgrade проверяются отдельными последующими tasks, не обещаются автоматически.
 
-### Smart selection v1
+## T06 — Subscriptions
 
-Local explainable rules:
+Зависит T01/T02; UI integration после T05. Реализовать bounded HTTP, plain/base64 lists, затем nodes-only JSON/YAML; ImportDraft, ETag/metadata, stable reconcile и transactional commit. Вынести each external format в отдельный adapter PR. Background fetch route явно задан.
 
-- own package -> bypass
-- other VPN/proxy packages -> bypass
-- system services -> bypass suggestion
-- browsers/messaging/social -> proxy suggestion
-- everything uncertain -> no automatic change
+DoD: SUB-01..03, IMP-04; URL/token не выводится; partial/empty/invalid update не стирает data; 1 000 nodes measured; active snapshot не меняется без Apply. Не добавлять arbitrary native config mode.
 
-### Smart selection v2
+## T07 — Android apps и suggestions
 
-Add optional local/regional presets and learning from user-confirmed outcomes:
+Зависит T03A, storage T01. Package identity/inventory, icon cache, mode preview, effective list validation, apply via controlled restart. Local hints providers и explainable suggestions с ручным подтверждением. Advanced package routing только после capability из T04.
 
-- “works only through proxy” / “works better direct” feedback
-- repeated connection failures
-- app-associated domain rule-set hints
-- user-created category presets
+DoD: AND-01/03, empty include/last uninstall/mode conversion; explicit user choice сохраняется; no inventory network upload; excluded-app block conflict виден. System/category heuristic не применяет правила автоматически.
 
-Never silently rewrite the app list. Show proposed changes, confidence and reasons, then let the user apply them.
+## T08 — Product integration
 
-Acceptance: switching whitelist/blacklist updates TUN filtering correctly without reconnect loops or excluding the VPN service incorrectly.
+Зависит T04/T05/T06/T07. Соединить все read models со screens; desired/active indicators; RU/EN, adaptive layouts, safe-area, errors, keyboard/accessibility, logs/export. Manual group минимум, test selected node через реальный outbound.
 
-## Phase 6 — Proxy groups, health and failover
+DoD: UX-01 и пользовательский путь M2 на Android/Linux; no placeholder success; restart/rebind корректен; redacted bundle проходит SEC-01. Не менять дизайн целиком под предлогом state refactor.
 
-- Manual selector.
-- URL-test / fastest.
-- Fallback group.
-- Per-node latency/history.
-- Background health checks while connected with sane battery/network limits.
-- Sticky node selection to prevent unnecessary hopping.
-- Manual “test all” and per-profile test URL.
-- Optional independent groups for routing rules.
+## T09 — Reliability и измерения
 
-Acceptance: node failures can move a group to a healthy node without changing user routing rules.
+Зависит T08. Расширить fault tests, migrations, concurrency, crash recovery, DNS/IPv6 captures, 100 cycles, 8 h idle; измерить budgets и исправить найденные проблемы. Always-on/kill-switch включать только отдельным доказанным scope; иначе честно unavailable.
 
-## Phase 7 — DNS and rule sets
+DoD: acceptance matrix содержит actual evidence/known failures; no unexplained FD/process growth; packet capture соответствует policy; secrets не утекли. Не понижать защиту ради throughput benchmark.
 
-- Core-native DNS module.
-- Direct and proxied DNS paths.
-- DoH / DoT / UDP/TCP where supported.
-- DNS leak tests.
-- Rule-set manager with transactional updates.
-- Bundled local/private-network rules.
-- Remote binary/source rules.
-- Optional ad-block rule sets.
-- Clear cache and inspect matched rule tools.
+## T10 — Протоколы и extended backend
 
-Acceptance: domain routing remains correct and DNS behavior is explainable in diagnostics.
+Зависит T05 и capability gate T00. Каждый protocol/transport — свой vertical PR по PROTOCOLS. Начать Trojan/Shadowsocks/VMess/Hysteria2/TUIC по выбранному приоритету, XHTTP отдельным build/API/licensing gate. WireGuard/AWG/AnyTLS — последующие срезы.
 
-## Phase 8 — Advanced core support
+DoD: parser+storage+compiler+core check+platform E2E на каждую claimed tuple. Unsupported сохраняется importOnly. Не делать silent backend switch и не добавлять несколько concurrent cores без ADR.
 
-Capability-gated features:
+## T11 — Groups и failover
 
-- XHTTP through an extended backend if required.
-- Amnezia variants supported by the selected extended core.
-- AnyTLS / additional modern protocols.
-- TLS fragmentation / other routing options where appropriate.
-- multiple core channels: Stable and Extended.
+Зависит T08. Manual selection, verified dynamic selector, health strategy owner, probe budgets, hysteresis и fallback. Начать без nested groups; при расширении cycle detection.
 
-Do not force all users onto an extended fork only to support one transport.
+DoD: failed current member переводит в eligible node по policy, no node flapping, empty group не DIRECT, UI показывает реальный member, subscription refresh не рушит pinned group semantics.
 
-Acceptance: importing an unsupported link gives a precise capability message instead of a generic parser error.
+## T12 — Packaging и выпуск
 
-## Phase 9 — Product hardening and releases
+Зависит T09, плюс T10/T11 только для заявляемых расширений. Project-owner license decision, pinned manifest/SBOM/notices, Android signing, Linux packages/helper lifecycle, install/upgrade/uninstall, release evidence. Не публиковать binary без соответствующего поручения.
 
-- Crash-safe connection recovery.
-- Structured/redacted log viewer.
-- Diagnostic bundle export.
-- Auto-update on Linux.
-- Android release signing and reproducible CI artifacts.
-- Architecture matrix builds.
-- Migration tests for persisted data.
-- Performance/battery profiling.
-- Accessibility and keyboard navigation.
-- Russian and English localization first.
+DoD: clean install и upgrade с secrets/migrations; rollback compatibility; supported matrix attached; known limitations пользователю; reproducible source→artifact identity. Название релиза не заменяет Android versionCode или internal schema versions.
 
-## Implementation order summary
+## Шаблон проверки завершения этапа
 
-The practical sequence is:
-
-```text
-Native core/TUN
-  -> one VLESS link
-  -> subscriptions
-  -> routing rules
-  -> Android app routing
-  -> smart suggestions
-  -> groups/failover
-  -> DNS/rule sets
-  -> protocol breadth
-  -> hardening/release
-```
-
-This avoids the common trap of implementing a large settings UI before the connection lifecycle is reliable.
+Записать: task IDs; baseline и result commit; changed interfaces/schema; список acceptance IDs с pass/fail/not-run; evidence paths; remaining blockers; следующий ровно один рекомендуемый task. Если gate blocked, не продвигать milestone в completed по наличию scaffold.

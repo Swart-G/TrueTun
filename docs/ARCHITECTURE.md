@@ -1,203 +1,82 @@
-# TrueTun architecture
+# Архитектура TrueTun
 
-## 1. Architectural decision
+Статус: принято для проектирования; реализация перечислена отдельно в [baseline](architecture/01-baseline.md). Основная цель — независимый от ядра продукт с предсказуемой сетевой сессией на Android и Linux.
 
-TrueTun is a Flutter product with a replaceable proxy-core backend.
+## 1. Границы продукта
 
-The important constraint is that **profiles, routing rules, subscriptions, app policies and UI must not depend on a concrete core API**. A connection session is built in stages:
+Обязательное ядро продукта: одиночные VLESS-ссылки и подписки; TUN; упорядоченные правила proxy/direct/block; Android include/exclude; локальные рекомендации приложений; диагностика причин отказа. Поддержка других протоколов расширяется через verified capabilities. Никакая архитектура клиента сама по себе не гарантирует обход блокировок любой сети.
 
-```text
-Profile source -> normalized nodes -> proxy groups
-                              \
-Routing policy ----------------> Core config compiler -> ProxyCoreAdapter -> TUN
-App policy --------------------/
-DNS policy -------------------/
+Не входят в первый выпуск: серверная панель, собственный proxy protocol, облачный аккаунт и синхронизация, прозрачная цепочка нескольких ядер, полный интерпретатор Mihomo, live-update binary ядра, FakeIP по умолчанию. Они не должны влиять на готовность базового пути.
+
+## 2. Основная форма системы
+
+Модульный монолит на Flutter/Dart с native runtime boundaries. Не создавать микросервисы и отдельный package на каждую сущность. Один исходный domain/compiler используется обеими платформами. Передача пакетов никогда не проходит через Dart, MethodChannel или UI state.
+
+```mermaid
+flowchart TD
+  UI["Flutter UI"] --> APP["Application use cases"]
+  APP --> DOM["Domain models and ports"]
+  APP --> COMP["Configuration compiler"]
+  APP --> DATA["Repositories and secret store"]
+  COMP --> DOM
+  DATA --> DOM
+  APP --> PORT["Session control port"]
+  PORT --> AND["Android service process"]
+  PORT --> LIN["Linux runtime helper"]
+  AND --> CORE["Pinned proxy core"]
+  LIN --> CORE
 ```
 
-This gives us Hiddify's useful separation without inheriting Hiddify application code or making the product impossible to migrate later.
+На диаграмме вызовы и границы исполнения; направление compile-time зависимости adapters/repositories — к domain ports, а не наоборот. Composition root выбирает реализации. Результат сборки зависит от platform/core manifest, но доменные правила не зависят от API sing-box.
 
-## 2. Core strategy
+## 3. Модули и владение
 
-### Baseline
+| Целевой каталог | Ответственность | Запрещено |
+|---|---|---|
+| `lib/src/app/` | Bootstrap, DI, navigation, общая тема | Бизнес-правила и runtime JSON |
+| `lib/src/domain/` | IDs, модели, pure validation, repository/clock/secret ports | Flutter, dart:io, плагины, конкретная БД |
+| `lib/src/application/` | Import, update, connect plan, routing edits, snapshot assembly | Прямые shell/root операции |
+| `lib/src/features/` | Экраны, view models, локальное presentation state | Доступ к core config и секретам без отдельного use case |
+| `lib/src/infrastructure/persistence/` | SQLite adapter, migrations, transactions | Самостоятельное применение VPN настроек |
+| `lib/src/infrastructure/import/` | HTTP/parser adapters и normalizers | Запуск входящего native config |
+| `lib/src/infrastructure/core/` | Capabilities registry, compiler backend, lifecycle facade | Скрытое изменение пользовательского policy |
+| `lib/src/infrastructure/platform/` | Android bridge, Linux IPC, apps/network providers | Дублирование бизнес-правил |
+| `lib/src/infrastructure/diagnostics/` | Redaction, bounded logs, bundles | Неограниченный packet capture |
+| `android/` | Kotlin service, AIDL/native integration, FD/network ownership | Flutter business state как источник истины VPN |
+| `native/linux/` | Go helper, supervisor, Polkit/D-Bus, system resources | Произвольное исполнение команд клиента |
+| `test/`, `integration_test/` | Pure/contract/widget/device проверки | Production credentials |
 
-Use a stable sing-box release/build as the baseline backend. It already provides TUN, VLESS, VMess, Trojan, Shadowsocks, Hysteria2, TUIC, SSH, WireGuard, selectors, URL tests and rich routing.
+Каталоги целевые, сейчас не созданы. Сохранить существующие filenames до задачи на постепенный перенос. Pure Dart compiler может быть выделен в package только если появляется второй потребитель или необходимость enforce boundary.
 
-### Extended backend
+## 4. Технические решения
 
-Some deployments need functionality that is present in extended forks earlier than upstream, notably XHTTP or Amnezia-specific features. TrueTun should expose these through a separate backend capability flag rather than adding fork-specific concepts to every layer.
+Flutter сохраняется. Предложены Riverpod для DI/presentation state, Drift поверх SQLite для транзакционных данных, Pigeon для типизированного UI-native bridge; версии выбрать и pin в T01 по совместимости SDK. Domain не знает об этих библиотеках. Для Android выбрать Kotlin и mobile library выбранного ядра. Для Linux предложен Go helper: удобен для связи с Go core ecosystem и системных API, но он отдельный production component со строгим API.
 
-Example:
+Baseline ядра — точная стабильная сборка upstream sing-box, выбранная в T00, а не плавающий latest. Extended backend — отдельный compiler/manifest и отдельная матрица испытаний. Возможность XHTTP не доказывается словом «sing-box-compatible». Замена backend может потребовать полного restart, а несовместимые узлы остаются сохранёнными с объяснением.
 
-```text
-CoreCapabilities
-- protocols: vless, hysteria2, ...
-- transports: tcp, ws, grpc, xhttp?, ...
-- features: tun, rule_sets, app_routing, tls_fragment, ...
-```
+## 5. Потоки данных
 
-The UI can then hide or disable unsupported profile options for the selected backend.
+**Импорт:** input → ограниченный parser → ImportDraft с диагностикой → preview → transaction → normalized entities + encrypted secret refs. Сетевой профиль не управляет native inbounds, root flags, путями и lifecycle.
 
-## 3. Layers
+**Подключение:** repository read transaction → ConnectionSnapshot → semantic validation → capabilities validation → deterministic compile → platform/core validation → supervisor commit → readiness → active revision.
 
-### Presentation
+**Изменение правил:** editor draft → pure validation → save desired revision → показать diff с active → Apply → новый plan. Сохранённое изменение не означает применённое изменение. UI явно показывает pending changes.
 
-Flutter pages and widgets only talk to application services/state. The UI never writes sing-box JSON directly.
+**Обновление подписки:** новый candidate → reconcile IDs → проверить references → transaction desired data. Работающая сессия продолжает использовать immutable старый snapshot; переключение выполняет supervisor по отдельной политике. Обновление в фоне не прекращает работающие потоки само по себе.
 
-Main product areas:
+## 6. Авторитет состояния
 
-- Home / connection state
-- Profiles and subscriptions
-- Proxy groups / node selection
-- Routing
-- Android apps / Linux applications
-- Logs and diagnostics
-- Settings
+SQLite — источник пользовательской конфигурации; runtime supervisor — источник фактического состояния соединения. UI read models — проекции. Native service хранит ограниченный recovery capsule для восстановления без Flutter; он не редактирует подписки и database entities. Recovery capsule связан с snapshot hash и version, его нельзя использовать после отзыва согласия, несовместимой схемы или явного Disconnect.
 
-### Domain
+Supervisor serializes все lifecycle команды, включая уведомление, tray, UI, network changes, service restart. Не создавать независимый контроллер reconnect в виджете или background worker.
 
-Core-neutral models:
+## 7. Ключевые качественные свойства
 
-- `ProxyNode`
-- `Subscription`
-- `ProxyGroup`
-- `RoutingRule`
-- `RuleMatcher`
-- `RouteAction`
-- `AppRoutingPolicy`
-- `DnsPolicy`
+- Crash-safe ресурсы, ограниченные retries, явная degraded/failed диагностика.
+- Offline restart последнего валидного плана без загрузки GeoIP/подписки при каждой кнопке Connect.
+- Точная маршрутизация: no silent drop, stable IDs, differential compiler tests.
+- Приватность: inventory apps локально, секреты в защищённом хранилище, redacted-by-default export.
+- Расширяемость через ports и capabilities, а не «универсальный map» во всех слоях.
+- Наблюдаемость: correlated operation/session/revision IDs без credentials.
 
-They are persisted in our own schema with migrations.
-
-### Import / normalization
-
-Importers turn external formats into domain models:
-
-1. Single share links.
-2. Plain/base64 lists of share links.
-3. sing-box JSON.
-4. Clash/Mihomo YAML.
-5. Remote subscription URLs with headers/metadata.
-
-External configuration is never used as the application's database format. We normalize it first.
-
-### Configuration compiler
-
-A compiler receives a connection snapshot and produces a complete core config. It owns:
-
-- TUN inbound
-- DNS servers/rules
-- proxy outbounds
-- selector/urltest groups
-- ordered route rules
-- rule-set definitions
-- platform-specific patches
-
-All generated configs are validated by the core before replacing a running session.
-
-### Core adapter
-
-`ProxyCoreAdapter` owns lifecycle only:
-
-- capabilities/version
-- validate
-- start
-- stop
-- state events
-- logs
-
-Linux initially uses the process adapter. Android uses a native binding/VPN service, but both expose the same Dart interface.
-
-## 4. Android
-
-Native Android responsibilities should stay small and explicit:
-
-- `VpnService` lifecycle and permission flow.
-- Native core binding / file descriptors required by the core.
-- Installed application enumeration via `PackageManager`.
-- App icons and labels.
-- Foreground service notification.
-- Network change callbacks.
-- Protecting sockets/control channels from the VPN where required.
-- Applying the per-app allow/deny list to `VpnService.Builder`.
-
-Flutter owns the app-selection UX and the persisted policy.
-
-### Per-app modes
-
-TrueTun exposes two simple product modes:
-
-- `proxyAllExceptSelected` -> native `VpnService.Builder.addDisallowedApplication(...)` for the selected packages.
-- `proxyOnlySelected` -> native `VpnService.Builder.addAllowedApplication(...)` for the selected packages.
-
-This native filter is the production authority because it decides which application traffic enters the Android VPN at all. A core-level TUN `include_package`/`exclude_package` patch can be generated for compatible backends, but it is secondary.
-
-More precise package rules are a different layer: once an app is inside the VPN, sing-box `package_name` routing can send one app to proxy A, another to proxy B, direct or block.
-
-## 5. Linux
-
-Start with a sing-box-compatible child process because it is easy to debug and isolates crashes.
-
-Later add:
-
-- packaged core binary per architecture
-- privilege helper for TUN/routing setup
-- Polkit integration instead of running the whole GUI as root
-- system tray
-- process/app discovery from desktop entries + `/proc`
-- `process_name` / `process_path` routing
-
-The GUI should remain unprivileged.
-
-## 6. Routing semantics
-
-Rules are ordered and first-match wins, matching the mental model users know from Mihomo.
-
-A rule can contain several matcher categories. Values inside one category are OR; different categories are AND, following sing-box semantics. The UI should show this explicitly.
-
-Targets:
-
-- proxy or proxy group
-- direct
-- block
-
-The compiler rejects rules containing a platform-only matcher for the wrong platform. This prevents a package-only Android rule from turning into an accidental match-all rule on Linux.
-
-## 7. Smart app selection
-
-The first implementation is deliberately local and explainable:
-
-- Always bypass TrueTun itself.
-- Recommend bypass for other VPN/proxy apps.
-- Recommend bypass for sensitive system components by default.
-- Recommend proxy for browser/messaging/social categories with moderate confidence.
-- Leave ambiguous apps unchanged.
-
-The next layer adds curated regional package sets, similar in spirit to Hiddify's region-based auto-selection, but kept as replaceable TrueTun data providers rather than hard-coded product logic.
-
-Later inputs can include:
-
-- user-selected country/preset
-- known app domains from local rule-set metadata
-- previous connection failures
-- whether an app works only with/without proxy
-- user's previous choices
-
-Every recommendation must show a reason and remain one-tap reversible. Installed-app inventory should not be uploaded just to obtain recommendations.
-
-## 8. Reliability requirements
-
-- Generate new config -> validate -> only then switch sessions.
-- Store the last known-good config snapshot.
-- If a new config fails, restore the previous session.
-- Core crash must not crash the Flutter process.
-- Subscription refresh must be transactional.
-- Rule-set downloads require checksum/cache handling and a last-known-good copy.
-- Logs must redact credentials, UUIDs, passwords, subscription tokens and query parameters where appropriate.
-
-## 9. Security boundaries
-
-- Secret profile data is stored using platform-protected storage where possible.
-- Debug exports are redacted by default.
-- Remote subscription TLS verification stays enabled by default.
-- Never execute shell fragments from subscriptions/configs.
-- Linux privileged operations are isolated in a narrow helper API.
+Подробные контракты и failure scenarios обязательны: [данные](architecture/02-domain-data.md), [API](architecture/03-contracts.md), [lifecycle](architecture/04-session-lifecycle.md). Решения с альтернативами и gates: [ADR](architecture/11-decisions.md).

@@ -1,32 +1,18 @@
-# Core and licensing strategy
+# Выбор ядра и данные о лицензиях
 
-TrueTun should keep its own source independent from Hiddify application/core source.
+Этот документ задаёт инженерный release gate, а не выбирает лицензию TrueTun. В проверенном baseline проектного LICENSE нет. Архитектурный adapter не устраняет автоматически обязательства зависимости.
 
-## Why not directly embed `hiddify-core` now
+## Проверенные источники, 2026-09-06
 
-At the time this architecture was created, the Hiddify core repository publishes GPLv3 text together with additional project-specific permissions/restrictions, including requirements around forks, attribution/share-alike and non-commercial use.
+- В [LICENSE sing-box](https://github.com/SagerNet/sing-box/blob/testing/LICENSE) указана GPL версии 3 или позднее и дополнительное условие об имени/ассоциации. Проверенный blob: `175f35038fd936eb50439a4eb12d64501feb830c`. Это default testing branch, не выбранный production pin.
+- [LICENSE.md hiddify-core](https://github.com/hiddify/hiddify-core/blob/main/LICENSE.md) содержит GPLv3 и вводный список дополнительных условий, включая non-commercial, attribution и ограничения для forks. Проверенный blob: `529ef62e2ad38525704f9aa506cc985a32897162`. Здесь не делается вывод о юридической совместимости или применимости сочетания этих условий.
 
-That makes it a poor default dependency for a new independent client unless TrueTun deliberately accepts those distribution constraints.
+## Решение для проектирования
 
-## Preferred approach
+Собственные UI/domain/import/routing компоненты TrueTun; upstream sing-box как кандидат baseline; Hiddify application code не копируется. Extended fork оценивается независимо. Перед подключением конкретного binary/library агент фиксирует exact commit, LICENSE/NOTICE и transitives. License другого репозитория или его другой ветки не считается достаточным доказательством для выбранного artifact.
 
-1. Implement TrueTun's own UI/domain/import/routing code.
-2. Use a `ProxyCoreAdapter` boundary.
-3. Target a sing-box-compatible core configuration.
-4. Pin and audit the exact core distribution used for each release.
-5. Keep an extended core optional and capability-gated.
+## Gate до binary release
 
-The Hiddify sing-box fork is useful technically because it carries features such as XHTTP and Amnezia support, but it also has its own license obligations. Before shipping binaries, decide the final TrueTun license and verify compatibility with every linked/bundled component.
+Владелец проекта выбирает лицензию TrueTun на основе точного dependency inventory. Отдельно проверить Android native linking, Linux worker/library/process model, notices, source distribution requirements и branding. Не утверждать, что запуск через process делает copyleft неприменимым. При неопределённости нужны дополнительная проверка условий/квалифицированная оценка; не подменять её уверенным заключением агента.
 
-## Distribution checklist
-
-Before the first public binary release:
-
-- choose and add a TrueTun project license
-- record core source/version/commit for every binary artifact
-- include required core license notices/source offer as applicable
-- verify whether Android native linking creates copyleft obligations for the app as a combined work
-- verify Linux packaging model separately (bundled executable vs library)
-- do not use Hiddify names/branding in a way that implies endorsement
-
-This file is engineering guidance, not legal advice.
+Artifact inventory: component, source URL/commit, license files hashes, integration model, modifications, required notices/source materials и ответственный за проверку. Сборочные инструкции и соответствующие исходники для выпуска должны быть воспроизводимо связаны с build ID. Менять лицензию или объявлять совместимость всех будущих forks в рамках обычной implementation задачи нельзя.
