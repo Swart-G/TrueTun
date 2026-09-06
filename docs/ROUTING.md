@@ -110,12 +110,12 @@ Routing and DNS cannot be implemented independently. The configuration compiler 
 
 ## Android app routing vs route rules
 
-There are two different mechanisms and both are useful:
+There are two distinct mechanisms and both are useful:
 
-1. **TUN app filter** (`include_package` / `exclude_package`) decides which apps enter the VPN at all. This powers the simple whitelist/blacklist screen.
-2. **Route `package_name` rule** decides what to do with traffic from a package that already entered the VPN. This powers advanced per-app rules such as `Telegram -> proxy A`, `Browser -> proxy B`.
+1. **Native Android VPN app filter** decides which applications enter the VPN at all. TrueTun maps the simple whitelist/blacklist UI to `VpnService.Builder.addAllowedApplication(...)` and `addDisallowedApplication(...)`. A compatible core-level `include_package` / `exclude_package` filter is secondary rather than authoritative.
+2. **Route `package_name` rule** decides what to do with traffic from a package that has already entered the VPN. This powers advanced rules such as `Telegram -> proxy A`, `Browser -> proxy B`, direct, or block.
 
-TrueTun should keep these concepts separate in the UI.
+TrueTun keeps these concepts separate in both persistence and UI. The first is an application-access policy; the second is an ordered routing rule.
 
 ## Linux app routing
 
