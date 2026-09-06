@@ -118,6 +118,7 @@ Native Android responsibilities should stay small and explicit:
 - Foreground service notification.
 - Network change callbacks.
 - Protecting sockets/control channels from the VPN where required.
+- Applying the per-app allow/deny list to `VpnService.Builder`.
 
 Flutter owns the app-selection UX and the persisted policy.
 
@@ -125,10 +126,12 @@ Flutter owns the app-selection UX and the persisted policy.
 
 TrueTun exposes two simple product modes:
 
-- `proxyAllExceptSelected` -> TUN `exclude_package`.
-- `proxyOnlySelected` -> TUN `include_package`.
+- `proxyAllExceptSelected` -> native `VpnService.Builder.addDisallowedApplication(...)` for the selected packages.
+- `proxyOnlySelected` -> native `VpnService.Builder.addAllowedApplication(...)` for the selected packages.
 
-More precise package rules can additionally be emitted into route rules using `package_name`.
+This native filter is the production authority because it decides which application traffic enters the Android VPN at all. A core-level TUN `include_package`/`exclude_package` patch can be generated for compatible backends, but it is secondary.
+
+More precise package rules are a different layer: once an app is inside the VPN, sing-box `package_name` routing can send one app to proxy A, another to proxy B, direct or block.
 
 ## 5. Linux
 
@@ -168,6 +171,8 @@ The first implementation is deliberately local and explainable:
 - Recommend bypass for sensitive system components by default.
 - Recommend proxy for browser/messaging/social categories with moderate confidence.
 - Leave ambiguous apps unchanged.
+
+The next layer adds curated regional package sets, similar in spirit to Hiddify's region-based auto-selection, but kept as replaceable TrueTun data providers rather than hard-coded product logic.
 
 Later inputs can include:
 
