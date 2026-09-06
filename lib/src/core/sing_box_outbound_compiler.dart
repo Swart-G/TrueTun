@@ -27,10 +27,8 @@ class SingBoxOutboundCompiler {
     final flow = node.flow?.trim();
     if (flow != null && flow.isNotEmpty) result['flow'] = flow;
 
-    final packetEncoding = node.packetEncoding?.trim();
-    if (packetEncoding != null && packetEncoding.isNotEmpty) {
-      result['packet_encoding'] = packetEncoding;
-    }
+    final packetEncoding = _compilePacketEncoding(node.packetEncoding);
+    if (packetEncoding != null) result['packet_encoding'] = packetEncoding;
 
     final tls = _compileTls(node.tls);
     if (tls != null) result['tls'] = tls;
@@ -39,6 +37,21 @@ class SingBoxOutboundCompiler {
     if (transport != null) result['transport'] = transport;
 
     return result;
+  }
+
+  String? _compilePacketEncoding(String? raw) {
+    final value = raw?.trim().toLowerCase();
+    if (value == null || value.isEmpty) return null;
+    return switch (value) {
+      // VLESS share links commonly spell the disabled value as "none", while
+      // sing-box represents it as an empty packet_encoding string.
+      'none' => '',
+      'xudp' => 'xudp',
+      'packetaddr' => 'packetaddr',
+      _ => throw OutboundCompileException(
+          'Unsupported VLESS packet encoding: $raw',
+        ),
+    };
   }
 
   Map<String, Object>? _compileTls(TlsOptions options) {
