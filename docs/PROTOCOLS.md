@@ -1,90 +1,56 @@
-# Protocol support plan
+# Импорт, подписки и поддержка протоколов
 
-TrueTun separates **import support**, **core capability** and **tested production support**. A protocol appearing in a core build does not automatically mean the UI should claim it as supported.
+Успех parser, core check и работающее соединение — три разных доказательства. В baseline реализован только начальный VLESS parser/compiler; перечисление схем в detector или enum не означает поддержку протокола.
 
-## Priority matrix
+## 1. Capability matrix
 
-| Priority | Protocol / transport | Import | Stable backend | Extended backend | Notes |
-|---|---|---:|---:|---:|---|
-| P0 | VLESS TCP | In progress | Yes | Yes | First end-to-end path |
-| P0 | VLESS Reality | In progress | Yes | Yes | First-class support |
-| P0 | VLESS WebSocket | In progress | Yes | Yes | CDN-friendly legacy/common path |
-| P0 | VLESS gRPC | In progress | Yes | Yes | Requires compatible core build |
-| P0 | VLESS HTTPUpgrade | In progress | Yes | Yes | Supported by sing-box V2Ray transport |
-| P0 | VLESS XHTTP | Preserve import | No | Planned | Must be capability-gated and integration-tested |
-| P1 | VMess | Planned | Yes | Yes | Share link + subscription import |
-| P1 | Trojan | Planned | Yes | Yes | TLS + V2Ray transports where supported |
-| P1 | Shadowsocks | Planned | Yes | Yes | SIP002-style links first |
-| P1 | Hysteria2 | Planned | Yes | Yes | High priority modern UDP/QUIC option |
-| P1 | TUIC | Planned | Yes | Yes | QUIC-based |
-| P2 | SSH | Planned | Yes | Yes | Useful for simple deployments |
-| P2 | WireGuard | Planned | Yes | Extended options possible | Core support and platform behavior need testing |
-| P2 | AnyTLS | Planned | Core-dependent | Core-dependent | Expose only when capability reports it |
-| P3 | NaiveProxy | Planned | Build/platform-dependent | Build/platform-dependent | Optional backend feature |
-| P3 | Amnezia variants | Planned | No | Planned | Extended backend only |
+| Приоритет | Семейство | Baseline репозитория | Условие подключения |
+|---|---|---|---|
+| P0 | VLESS TCP + TLS/Reality | Parser и outbound map | Exact build, flow/fingerprint validation, Android/Linux E2E |
+| P0 | VLESS WS/gRPC/HTTPUpgrade | Поля парсятся и компилируются | Проверенные server fixtures каждой комбинации |
+| P0 discovery / P1 integration | VLESS XHTTP | Частичное сохранение import, compiler отклоняет | Отдельный backend, mode/options и upload/download E2E |
+| P1 | Trojan, Shadowsocks, VMess | Только protocol enums/detection | Tagged models, parsers, full fixtures |
+| P1 | Hysteria2, TUIC | Только enum/detection | QUIC/UDP build capability и network tests |
+| P2 | SSH, WireGuard | Только enum/detection | Актуальная модель core и platform integration |
+| P2 | HTTP/SOCKS proxy inputs | Частичная scheme detection | Различать proxy URL и subscription URL, UI choice при неоднозначности |
+| P2/P3 | AnyTLS, Naive, Amnezia variants | Нет реализации | Отдельные parser/build/platform/license gates |
 
-## Support states
+Каждая строка разворачивается в tuple protocol+transport+security+flow+UDP+platform+ABI+build. SupportState: unsupported, importOnly, experimental, supported. `supported` требует acceptance из verification; latest upstream docs не подтверждают shipped binary. WireGuard и AmneziaWG — разные возможности, конвертация WG не означает AWG. VLESS XHTTP import не подменяется TCP/WS. Список transport options сверяется с [upstream V2Ray transport](https://sing-box.sagernet.org/configuration/shared/v2ray-transport/), но pin решает применимость.
 
-Every importer/backend pair should expose one of:
+## 2. Input pipeline
 
-- `unsupported` — parser/core cannot represent it.
-- `importOnly` — TrueTun can preserve/display the profile but cannot connect with the current backend.
-- `experimental` — connect path exists but is not yet part of the stable compatibility promise.
-- `supported` — covered by config tests and platform integration tests.
+InputHandle = pasted text / shared intent / local file / remote source; clipboard не читается периодически без действия пользователя. Детектор выдаёт candidates с confidence, затем настоящий parser подтверждает формат. Порядок: bounded size → текстовая кодировка → явный структурированный формат/многострочный список → одиночный URI → bounded base64 decode и повторная проверка. Не считать любую длинную base64 строку подпиской.
 
-This prevents the common failure mode where a link imports successfully but breaks only after the user presses Connect.
+Proposal limits v1: 10 MiB downloaded/decompressed body, 10 000 nodes, 64 KiB на URI, YAML/JSON depth 32, максимум один base64 unwrap, 5 redirects, connect timeout 10 s и total fetch 30 s. Limiter считает decompressed bytes и parse memory, а не только Content-Length. XML/entity/script/custom YAML tag execution не допускается; YAML alias expansion ограничивается. Превышение — INPUT_LIMIT с unchanged existing source.
 
-## VLESS import fields
+ImportDraft содержит valid nodes, unsupported preserved nodes, errors(source location), warnings, duplicates, ignoredSections и required capabilities. Сохранение partial manual import возможно после preview. Фоновое refresh при parse errors не заменяет source по умолчанию; пользователь может явно принять partial update. Нулевой результат обновления не удаляет предыдущие узлы автоматически. Unsupported-but-preserved nodes не являются parse error, но preview показывает невозможность Connect.
 
-The typed VLESS model should preserve:
+## 3. VLESS требования
 
-- UUID
-- server / port
-- flow (`xtls-rprx-vision`)
-- packet encoding
-- TLS state
-- SNI
-- ALPN
-- insecure flag
-- uTLS fingerprint when provided
-- Reality public key / short ID
-- transport type
-- WebSocket host/path
-- gRPC service name
-- HTTP/HTTPUpgrade host/path
-- XHTTP mode/host/path and future extended parameters
+Проверять URI host/IPv6 brackets/port, credential syntax, duplicated query keys, supported security enum, TLS/Reality requirements, flow/transport compatibility. Неизвестный security блокирует подключение. UUID строгой baseline формы сохраняется пока выбранная спецификация не докажет другой допустимый формат; не ослаблять parser по догадке.
 
-Unknown query parameters should eventually be retained in an extension map so future versions can re-import/export profiles without losing information.
+Decode percent-encoding ровно один раз по компонентам URI. Различать `%2F` в path, `%25` и уже decoded fragment; не double-decode display name. Query multi-values сохраняются; конфликт `sni` и `serverName` не разрешается случайным порядком map. Реальные aliases нормализуются только при доказанной эквивалентности. `spx` не транспортный path, TCP HTTP header camouflage не автоматически HTTP transport.
 
-## Backend policy
+TLS enabled/serverName/ALPN/insecure/fingerprint и Reality publicKey/shortId сохраняются структурно. Insecure из ссылки требует заметного warning и explicit acceptance; не менять его молча ни в одну сторону. Unknown extensions хранятся bounded вместе с source format; не вставляются raw в generated config. Credential rotation и normalization учитывают stable identity правила из data spec.
 
-### Stable
+## 4. Подписки
 
-Use a pinned stable sing-box-compatible build and support only features validated against that version.
+Source хранит encrypted URL/headers, расписание, fetch route policy, ETag/Last-Modified и display metadata. HTTP client проверяет TLS; custom CA только через явное user setting и отдельный gate. Redirect на другой origin не получает Authorization/Cookie/custom secret headers исходного origin. HTTPS→HTTP downgrade запрещён default. URL/headers не логируются. Private/local URL допускается как явный пользовательский source; redirects к loopback/link-local/private destinations требуют отдельного подтверждения назначения либо блокируются, чтобы внешняя подписка не исследовала локальные сервисы.
 
-### Extended
+Refresh: fetch → 304 unchanged или parse candidate → normalize → reconcile IDs/overrides/groups → validate references → CAS transaction → notify diff. 401/403 означает auth required, не aggressive retry; 429 учитывает Retry-After; 5xx/timeout exponential bounded backoff с jitter. Defaults: auto refresh 12 h, min interval 15 min, per-source concurrency 1, global concurrency 2. Это проектные настройки, менять после измерений, не обещать exact timer в Android background.
 
-Use a separately identified build for capabilities not available in the stable backend, such as XHTTP or Amnezia-specific functionality. The extended backend must have its own compatibility tests and version pin.
+Metadata traffic/expiry из subscription headers считается внешним утверждением. Проверять единицы, переполнение/отрицательные числа/дату; показывать unknown при некорректном значении. Не путать billed traffic с локальными счётчиками TrueTun.
 
-The user can later choose a release channel such as:
+Отключение refresh не удаляет nodes. Редактирование subscription URL создаёт новую fetch generation; запоздавший response старого URL не коммитится. Отмена не оставляет half source. Background update не вызывает скрытый reconnect.
 
-- Stable core
-- Extended core
+## 5. JSON/YAML конфиги
 
-Profiles remain the same domain objects. The backend capability check decides whether Connect is allowed.
+Default import — только nodes. Groups/rules импортируются отдельным preview с semantic mapping report. Не применять из внешнего файла inbounds, listen addresses, external controller, local paths, tun flags, scripts, arbitrary download sources или runtime cache paths. Full native config passthrough исключён из v1: он ломает единый policy/compiler authority.
 
-## Compatibility tests
+sing-box schema version и Mihomo dialect — явные inputs parser adapters. Provider references требуют bounded graph и cycle detection; автоматический обход произвольных nested URLs выключен. Файлы rule-provider не считать profile subscription. Неподдерживаемый набор сохраняется как protected source attachment/importOnly с объяснением, не «успешно подключён».
 
-For each claimed protocol/transport, test at minimum:
+## 6. Протокол расширения
 
-1. Parser fixture -> normalized node.
-2. Normalized node -> generated core JSON.
-3. Core `check` accepts generated JSON.
-4. TCP download/upload.
-5. UDP where the protocol claims it.
-6. DNS through TUN.
-7. reconnect after network change.
-8. large bidirectional transfer, not only latency/ping.
-9. Android and Linux separately.
+Для нового протокола агент добавляет: domain tagged variant; parser с real sanitized fixtures; importer report; serializer persistence version; capability tuple; backend compiler; core-check fixture; E2E server harness; UI readable fields; redaction cases; support matrix evidence. Новая строка enum без этого не завершённая задача.
 
-XHTTP specifically needs upload/download tests with explicit mode handling because a config can appear connected while persistent/bidirectional traffic is broken.
+XHTTP сначала отдельный T00 compatibility investigation: определить exact source/build, лицензии, mobile/library API, поддерживаемые modes и extra fields. Если подходящий backend не подтверждён, сохранять importOnly с точной причиной; не делать скрытое многоядерное сцепление. Выбор extended core применяется ко всей сессии v1.

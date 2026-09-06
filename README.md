@@ -20,6 +20,10 @@ The project follows the architecture that makes Hiddify stable in practice: the 
 - Profiles, proxy groups, latency testing, automatic node selection and failover.
 - No dependency of UI/domain logic on a specific core implementation.
 
+## Documentation for AI agents
+
+Start with [AGENTS.md](AGENTS.md) and the [documentation map](docs/README.md). The detailed Russian-language specification covers module boundaries, data and IPC contracts, lifecycle/recovery, routing semantics, DNS, Android/Linux integration, security, UI, acceptance tests and implementation tasks. It describes the target architecture; see the [checked baseline](docs/architecture/01-baseline.md) for actual implementation status.
+
 ## Architecture
 
 ```text
@@ -67,7 +71,8 @@ Do not import Hiddify application code into TrueTun. Reusing the architecture is
 
 See:
 
-- `docs/ARCHITECTURE.md`
+- [Documentation map](docs/README.md)
+- [Architecture](docs/ARCHITECTURE.md)
 - `docs/ROUTING.md`
 - `docs/PROTOCOLS.md`
 - `docs/ROADMAP.md`
