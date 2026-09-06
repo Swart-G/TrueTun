@@ -3,10 +3,10 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-flutter create --platforms=android,linux --project-name truetun .
 flutter pub get
+dart run build_runner build
 dart format lib test
 flutter analyze
 flutter test
 
-echo "TrueTun Android/Linux Flutter shells are ready."
+echo "TrueTun dependencies, generated sources, and checks are ready."

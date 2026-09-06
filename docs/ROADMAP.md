@@ -15,8 +15,8 @@ Status: **started in repository**
 - [x] Local smart-app suggestion baseline.
 - [x] Profile input type detector.
 - [x] Architecture/routing docs and tests.
-- [ ] Generate and commit Android/Linux Flutter platform shells.
-- [ ] Add persistence/state-management layer.
+- [x] Generate and commit Android/Linux Flutter platform shells.
+- [x] Add initial Drift persistence and Riverpod state-management layer.
 
 Acceptance: domain tests pass and the UI shell runs on both targets.
 
@@ -29,7 +29,8 @@ Acceptance: domain tests pass and the UI shell runs on both targets.
 - Add config/runtime directories under the appropriate XDG paths.
 - Add an unprivileged GUI + narrow privileged helper using Polkit.
 - Implement TUN start/stop and clean rollback of routes on crash.
-- Add system tray connection control.
+- [x] Add Linux system tray lifecycle and background operation.
+- [x] Add per-user Linux autostart.
 
 ### Android
 
@@ -46,7 +47,7 @@ Acceptance: a hardcoded outbound can establish a TUN connection on Android and L
 
 Priority: **highest protocol priority**
 
-Implement `vless://` parsing into a normalized `ProxyNode` model:
+Implement `vless://` parsing into a normalized `ProxyNode` model (initial parser complete):
 
 - UUID
 - host / port
@@ -61,14 +62,14 @@ Implement `vless://` parsing into a normalized `ProxyNode` model:
 
 Then implement:
 
-- one-node config generation
-- direct outbound
-- TUN inbound
-- DNS baseline
-- validation before start
+- [x] one-node config generation
+- [x] direct outbound
+- [x] TUN inbound
+- [x] DNS baseline
+- [x] validation before start
 - latency test
-- connect/disconnect UI
-- redacted diagnostics
+- [x] initial connect/disconnect UI
+- [x] redacted core events baseline
 
 Acceptance: paste one VLESS link -> connect -> DNS/TCP/UDP work -> reconnect works on both platforms.
 

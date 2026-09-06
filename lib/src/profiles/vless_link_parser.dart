@@ -26,7 +26,8 @@ class VlessLinkParser {
       throw const ProfileParseException('VLESS server host is missing');
     }
     if (!uri.hasPort || uri.port <= 0 || uri.port > 65535) {
-      throw const ProfileParseException('VLESS server port is missing or invalid');
+      throw const ProfileParseException(
+          'VLESS server port is missing or invalid');
     }
 
     final query = uri.queryParameters;
@@ -55,7 +56,8 @@ class VlessLinkParser {
       enabled: tlsEnabled,
       serverName: _firstNonEmpty(query['sni'], query['serverName']),
       alpn: alpn,
-      insecure: _isTruthy(query['allowInsecure']) || _isTruthy(query['insecure']),
+      insecure:
+          _isTruthy(query['allowInsecure']) || _isTruthy(query['insecure']),
       fingerprint: _firstNonEmpty(query['fp'], query['fingerprint']),
       reality: reality,
     );
@@ -68,11 +70,21 @@ class VlessLinkParser {
       host: _firstNonEmpty(query['host'], query['authority']),
       path: _firstNonEmpty(query['path'], query['spx']),
       serviceName: _firstNonEmpty(query['serviceName'], query['service_name']),
-      mode: query['mode']?.trim().isEmpty == true ? null : query['mode']?.trim(),
+      mode:
+          query['mode']?.trim().isEmpty == true ? null : query['mode']?.trim(),
     );
 
+    final extensions = <String, String>{};
+    for (final entry in query.entries) {
+      if (!_knownQueryParameters.contains(entry.key)) {
+        extensions[entry.key] = entry.value;
+      }
+    }
+
     final fragment = uri.fragment.trim();
-    final name = fragment.isEmpty ? '${uri.host}:${uri.port}' : Uri.decodeComponent(fragment);
+    final name = fragment.isEmpty
+        ? '${uri.host}:${uri.port}'
+        : Uri.decodeComponent(fragment);
 
     return VlessNode(
       name: name,
@@ -80,9 +92,11 @@ class VlessLinkParser {
       port: uri.port,
       uuid: uuid,
       flow: _emptyToNull(query['flow']),
-      packetEncoding: _firstNonEmpty(query['packetEncoding'], query['packet_encoding']),
+      packetEncoding:
+          _firstNonEmpty(query['packetEncoding'], query['packet_encoding']),
       tls: tls,
       transport: transport,
+      extensions: Map.unmodifiable(extensions),
     );
   }
 
@@ -125,4 +139,31 @@ class VlessLinkParser {
   static final RegExp _uuidPattern = RegExp(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
   );
+
+  static const _knownQueryParameters = <String>{
+    'security',
+    'pbk',
+    'publicKey',
+    'sid',
+    'shortId',
+    'alpn',
+    'sni',
+    'serverName',
+    'allowInsecure',
+    'insecure',
+    'fp',
+    'fingerprint',
+    'type',
+    'headerType',
+    'host',
+    'authority',
+    'path',
+    'spx',
+    'serviceName',
+    'service_name',
+    'mode',
+    'flow',
+    'packetEncoding',
+    'packet_encoding',
+  };
 }

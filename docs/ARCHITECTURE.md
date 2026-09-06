@@ -137,11 +137,16 @@ More precise package rules are a different layer: once an app is inside the VPN,
 
 Start with a sing-box-compatible child process because it is easy to debug and isolates crashes.
 
+Current test build includes:
+
+- packaged x86_64 core binary
+- root-owned helper restricted to config validation and core startup
+- one PolicyKit authentication during launcher startup
+
 Later add:
 
-- packaged core binary per architecture
-- privilege helper for TUN/routing setup
-- Polkit integration instead of running the whole GUI as root
+- packaged core binaries for other architectures
+- dedicated PolicyKit service instead of the temporary sudoers integration
 - system tray
 - process/app discovery from desktop entries + `/proc`
 - `process_name` / `process_path` routing

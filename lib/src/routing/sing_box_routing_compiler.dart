@@ -27,7 +27,8 @@ class SingBoxRoutingCompiler {
     required RoutingPlatform platform,
   }) {
     if (rule.matcher.isEmpty) {
-      throw RoutingCompileException('Rule "${rule.name}" has no match conditions');
+      throw RoutingCompileException(
+          'Rule "${rule.name}" has no match conditions');
     }
 
     _verifyPlatformFields(rule, platform);
@@ -88,10 +89,9 @@ class SingBoxRoutingCompiler {
 
   void _verifyPlatformFields(RoutingRule rule, RoutingPlatform platform) {
     final matcher = rule.matcher;
-    final hasAndroidFields =
-        matcher.packageNames.isNotEmpty || matcher.packageNameRegexes.isNotEmpty;
-    final hasLinuxFields =
-        matcher.processNames.isNotEmpty ||
+    final hasAndroidFields = matcher.packageNames.isNotEmpty ||
+        matcher.packageNameRegexes.isNotEmpty;
+    final hasLinuxFields = matcher.processNames.isNotEmpty ||
         matcher.processPaths.isNotEmpty ||
         matcher.processPathRegexes.isNotEmpty;
 

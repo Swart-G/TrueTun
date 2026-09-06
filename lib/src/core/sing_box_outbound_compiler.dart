@@ -16,12 +16,6 @@ class SingBoxOutboundCompiler {
     VlessNode node, {
     required String tag,
   }) {
-    if (node.transport.type == V2RayTransportType.xhttp) {
-      throw const OutboundCompileException(
-        'XHTTP requires an extended core adapter and is not compiled by the stable backend yet',
-      );
-    }
-
     final result = <String, Object>{
       'type': 'vless',
       'tag': tag,
@@ -110,9 +104,13 @@ class SingBoxOutboundCompiler {
       case V2RayTransportType.quic:
         return <String, Object>{'type': 'quic'};
       case V2RayTransportType.xhttp:
-        throw const OutboundCompileException(
-          'XHTTP is not available in the stable sing-box compiler',
-        );
+        return <String, Object>{
+          'type': 'xhttp',
+          if (_notEmpty(options.mode)) 'mode': options.mode!.trim(),
+          if (_notEmpty(options.host)) 'host': options.host!.trim(),
+          if (_notEmpty(options.path)) 'path': options.path!.trim(),
+          'x_padding_bytes': '100-1000',
+        };
     }
   }
 

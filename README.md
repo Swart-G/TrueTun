@@ -1,5 +1,7 @@
 # TrueTun
 
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 TrueTun is a cross-platform proxy client for **Android** and **Linux**.
 
 The project follows the architecture that makes Hiddify stable in practice: the UI and product logic are independent from the proxy core. TrueTun uses an adapter around a sing-box-compatible core instead of coupling profiles, routing and UI directly to one binary/fork.
@@ -57,7 +59,7 @@ This first foundation contains:
 - Architecture, routing, protocol and implementation-roadmap documentation.
 - Unit tests and GitHub Actions CI for format/analyze/tests.
 
-Native Android `VpnService`/mobile-core integration and generated Android/Linux Flutter platform shells are the next implementation step. The domain model is already shaped so native details do not leak into profiles, routing or the UI.
+Android and Linux Flutter platform shells are committed. The next platform step is native Android `VpnService`/mobile-core integration and production Linux core packaging. The domain model is already shaped so native details do not leak into profiles, routing or the UI.
 
 ## Core strategy
 
@@ -78,13 +80,33 @@ See:
 Install Flutter with Android and Linux desktop toolchains, then from the repository root run:
 
 ```bash
-flutter create --platforms=android,linux --project-name truetun .
 flutter pub get
 flutter analyze
 flutter test
 ```
 
-The same bootstrap is available as `tool/bootstrap.sh`. When the generated native shells are committed, `flutter create` is no longer necessary.
+The same dependency and validation commands are available through `tool/bootstrap.sh`.
+
+## Linux test build
+
+Create a self-contained debug bundle with the pinned sing-box core:
+
+```bash
+FLUTTER_BIN=/path/to/flutter/bin/flutter tool/package_linux_test.sh
+build/linux/x64/debug/bundle/truetun
+```
+
+The `truetun` launcher asks for administrator authentication once. It installs
+a root-owned core and a narrow helper with a `sudoers` rule limited to core
+configuration validation and startup. Connections use non-interactive sudo, so
+TUN routing and systemd-resolved setup do not request a second password. The
+Flutter UI itself remains unprivileged. The Home page runs an HTTPS connection
+test, displays its latency and reads traffic counters from the core. Core output
+and connection-test results are available on the Logs page.
+
+Closing the Linux window keeps TrueTun running in the system tray. The Settings
+page controls per-user autostart, background operation, TUN stack, MTU, strict
+routing, IPv6, DNS servers, and the core log level.
 
 ## Project direction
 

@@ -89,6 +89,7 @@ class VlessNode extends ProxyNode {
     required this.transport,
     this.flow,
     this.packetEncoding,
+    this.extensions = const {},
   }) : super(protocol: ProxyProtocol.vless);
 
   final String uuid;
@@ -96,4 +97,29 @@ class VlessNode extends ProxyNode {
   final String? packetEncoding;
   final TlsOptions tls;
   final V2RayTransportOptions transport;
+  final Map<String, String> extensions;
+
+  VlessNode copyWith({
+    String? name,
+    String? server,
+    int? port,
+    String? uuid,
+    String? flow,
+    String? packetEncoding,
+    TlsOptions? tls,
+    V2RayTransportOptions? transport,
+    Map<String, String>? extensions,
+  }) {
+    return VlessNode(
+      name: name ?? this.name,
+      server: server ?? this.server,
+      port: port ?? this.port,
+      uuid: uuid ?? this.uuid,
+      flow: flow ?? this.flow,
+      packetEncoding: packetEncoding ?? this.packetEncoding,
+      tls: tls ?? this.tls,
+      transport: transport ?? this.transport,
+      extensions: extensions ?? this.extensions,
+    );
+  }
 }

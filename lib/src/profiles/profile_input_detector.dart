@@ -31,7 +31,8 @@ class ProfileInputDetector {
     if (input.isEmpty) return ProfileInputKind.unknown;
 
     final singleUri = Uri.tryParse(input);
-    if (singleUri != null && _shareSchemes.contains(singleUri.scheme.toLowerCase())) {
+    if (singleUri != null &&
+        _shareSchemes.contains(singleUri.scheme.toLowerCase())) {
       return ProfileInputKind.singleShareLink;
     }
 
@@ -51,7 +52,8 @@ class ProfileInputDetector {
     if (nonEmptyLines.length > 1 &&
         nonEmptyLines.every((line) {
           final uri = Uri.tryParse(line);
-          return uri != null && _shareSchemes.contains(uri.scheme.toLowerCase());
+          return uri != null &&
+              _shareSchemes.contains(uri.scheme.toLowerCase());
         })) {
       return ProfileInputKind.shareLinkList;
     }

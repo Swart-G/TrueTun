@@ -46,7 +46,8 @@ class AppRoutingPolicy {
     switch (mode) {
       case AppRoutingMode.proxyAllExceptSelected:
         return {
-          'exclude_package': <String>{...selected, ownPackageName}.toList()..sort(),
+          'exclude_package': <String>{...selected, ownPackageName}.toList()
+            ..sort(),
         };
       case AppRoutingMode.proxyOnlySelected:
         return {
@@ -157,7 +158,8 @@ class SmartAppSuggestionEngine {
         app: app,
         recommendation: AppRoutingRecommendation.proxy,
         confidence: 0.65,
-        reason: 'This category commonly benefits from the selected proxy route.',
+        reason:
+            'This category commonly benefits from the selected proxy route.',
       );
     }
 
