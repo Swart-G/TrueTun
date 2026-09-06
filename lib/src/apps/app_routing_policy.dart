@@ -15,15 +15,33 @@ class AppRoutingPolicy {
   final AppRoutingMode mode;
   final Set<String> selectedPackageNames;
 
-  /// Produces the Android TUN inbound package filter patch used by sing-box.
+  /// Payload for the native Android VpnService layer.
   ///
-  /// [ownPackageName] is deliberately never inserted into an include list and
-  /// is always inserted into an exclude list to reduce accidental VPN loops.
+  /// Production Android should apply this with VpnService.Builder
+  /// addAllowedApplication/addDisallowedApplication. This decides which apps
+  /// enter the VPN before traffic reaches the proxy core.
+  Map<String, Object> toAndroidVpnPolicy({required String ownPackageName}) {
+    final selected = _normalizedPackages(ownPackageName);
+
+    switch (mode) {
+      case AppRoutingMode.proxyAllExceptSelected:
+        return {
+          'mode': 'exclude',
+          'packages': <String>{...selected, ownPackageName}.toList()..sort(),
+        };
+      case AppRoutingMode.proxyOnlySelected:
+        return {
+          'mode': 'include',
+          'packages': selected.toList()..sort(),
+        };
+    }
+  }
+
+  /// Equivalent sing-box TUN patch for cores/platform bindings that support
+  /// package filtering internally. Native VpnService filtering is preferred
+  /// on Android; this method keeps the domain layer backend-neutral.
   Map<String, Object> toAndroidTunPatch({required String ownPackageName}) {
-    final selected = selectedPackageNames
-        .map((value) => value.trim())
-        .where((value) => value.isNotEmpty && value != ownPackageName)
-        .toSet();
+    final selected = _normalizedPackages(ownPackageName);
 
     switch (mode) {
       case AppRoutingMode.proxyAllExceptSelected:
@@ -35,6 +53,13 @@ class AppRoutingPolicy {
           'include_package': selected.toList()..sort(),
         };
     }
+  }
+
+  Set<String> _normalizedPackages(String ownPackageName) {
+    return selectedPackageNames
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty && value != ownPackageName)
+        .toSet();
   }
 }
 
