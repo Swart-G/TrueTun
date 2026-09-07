@@ -1,136 +1,191 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:truetun/src/core/connection_snapshot.dart';
 import 'package:truetun/src/core/sing_box_outbound_compiler.dart';
-import 'package:truetun/src/profiles/proxy_node.dart';
 import 'package:truetun/src/routing/routing_rule.dart';
 import 'package:truetun/src/routing/sing_box_routing_compiler.dart';
 
+class ConfigCompileException implements Exception {
+  const ConfigCompileException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'ConfigCompileException: $message';
+}
+
 class SingBoxConfigCompiler {
-  const SingBoxConfigCompiler({
-    this.outboundCompiler = const SingBoxOutboundCompiler(),
-    this.routingCompiler = const SingBoxRoutingCompiler(),
-  });
+  const SingBoxConfigCompiler();
 
-  final SingBoxOutboundCompiler outboundCompiler;
-  final SingBoxRoutingCompiler routingCompiler;
+  static const _outboundCompiler = SingBoxOutboundCompiler();
+  static const _routingCompiler = SingBoxRoutingCompiler();
 
-  String compile(ConnectionSnapshot snapshot) =>
-      jsonEncode(compileMap(snapshot));
+  String compile(ConnectionSnapshot snapshot) => jsonEncode(compileMap(snapshot));
 
   Map<String, Object> compileMap(ConnectionSnapshot snapshot) {
-    final tag = snapshot.nodeTag.trim();
-    if (tag.isEmpty || tag == 'direct' || tag == 'block' || tag == 'dns-out') {
-      throw const OutboundCompileException(
-          'Proxy outbound tag is invalid or reserved');
+    _validatePreferences(snapshot);
+
+    final proxy = _outboundCompiler.compileVless(snapshot.node, tag: 'proxy');
+    // Keep proxy endpoint resolution outside the tunnel to prevent a
+    // dependency loop when more than one DNS transport is configured.
+    proxy['domain_resolver'] = 'dns-direct';
+
+    final tun = <String, Object>{
+      'type': 'tun',
+      'tag': 'tun-in',
+      'interface_name': 'truetun0',
+      'address': <String>[
+        '172.19.0.1/30',
+        if (snapshot.preferences.ipv6) 'fdfe:dcba:9876::1/126',
+      ],
+      'mtu': snapshot.preferences.mtu,
+      'auto_route': true,
+      'strict_route': snapshot.preferences.strictRoute,
+      'stack': snapshot.preferences.stack,
+    };
+
+    if (snapshot.platform == RoutingPlatform.linux) {
+      tun['auto_redirect'] = true;
     }
 
-    final proxy = switch (snapshot.node) {
-      final VlessNode node => outboundCompiler.compileVless(node, tag: tag),
-    };
+    if (snapshot.platform == RoutingPlatform.android) {
+      for (final entry in snapshot.androidTunPatch.entries) {
+        if (_allowedAndroidTunPatchKeys.contains(entry.key)) {
+          tun[entry.key] = entry.value;
+        }
+      }
+    }
 
     final routeRules = <Map<String, Object>>[
       <String, Object>{
         'port': <int>[53],
         'action': 'hijack-dns',
       },
-      ...routingCompiler.compileRules(
-        snapshot.rules,
+      ..._routingCompiler.compileRules(
+        snapshot.routingRules,
         platform: snapshot.platform,
       ),
     ];
 
+    final route = <String, Object>{
+      'rules': routeRules,
+      'final': 'proxy',
+      'default_domain_resolver': 'dns-direct',
+      if (snapshot.platform == RoutingPlatform.linux)
+        'auto_detect_interface': true,
+    };
+
     return <String, Object>{
       'log': <String, Object>{
-        'level': snapshot.logLevel,
+        'level': snapshot.preferences.logLevel,
         'timestamp': true,
       },
       'dns': <String, Object>{
         'servers': <Map<String, Object>>[
           _compileDnsServer(
-            snapshot.dns.remoteServer,
-            tag: 'remote-dns',
-            detour: tag,
+            snapshot.preferences.directDns,
+            tag: 'dns-direct',
+            requireIpAddress: true,
           ),
-          _compileDnsServer(snapshot.dns.directServer, tag: 'direct-dns'),
+          _compileDnsServer(
+            snapshot.preferences.remoteDns,
+            tag: 'dns-remote',
+            detour: 'proxy',
+          ),
         ],
-        'final': 'remote-dns',
+        'final': 'dns-remote',
+        'strategy': snapshot.preferences.ipv6 ? 'prefer_ipv4' : 'ipv4_only',
       },
-      'inbounds': <Map<String, Object>>[
-        <String, Object>{
-          'type': 'tun',
-          'tag': 'tun-in',
-          'interface_name': snapshot.tun.interfaceName,
-          'address': <String>[
-            '172.19.0.1/30',
-            if (snapshot.tun.ipv6) 'fdfe:dcba:9876::1/126',
-          ],
-          'mtu': snapshot.tun.mtu,
-          'auto_route': snapshot.tun.autoRoute,
-          'strict_route': snapshot.tun.strictRoute,
-          'stack': snapshot.tun.stack,
-        },
-      ],
+      'inbounds': <Map<String, Object>>[tun],
       'outbounds': <Map<String, Object>>[
         proxy,
         <String, Object>{'type': 'direct', 'tag': 'direct'},
       ],
-      'route': <String, Object>{
-        'auto_detect_interface': true,
-        'default_domain_resolver': 'direct-dns',
-        'rules': routeRules,
-        'final': _finalOutbound(snapshot.finalAction, tag),
-      },
-      'experimental': <String, Object>{
-        'clash_api': <String, Object>{
-          'external_controller': '127.0.0.1:19090',
-        },
-      },
+      'route': route,
     };
   }
 
-  String _finalOutbound(RouteAction action, String proxyTag) {
-    return switch (action.type) {
-      RouteActionType.proxy => action.outboundTag?.trim().isNotEmpty == true
-          ? action.outboundTag!.trim()
-          : proxyTag,
-      RouteActionType.direct => 'direct',
-      RouteActionType.block => throw const RoutingCompileException(
-          'Block cannot be used as the final outbound',
-        ),
-    };
+  void _validatePreferences(ConnectionSnapshot snapshot) {
+    final preferences = snapshot.preferences;
+    if (preferences.mtu < 1280 || preferences.mtu > 65535) {
+      throw const ConfigCompileException('MTU must be between 1280 and 65535');
+    }
+    if (!const {'system', 'gvisor', 'mixed'}.contains(preferences.stack)) {
+      throw ConfigCompileException('Unsupported TUN stack: ${preferences.stack}');
+    }
+    if (!const {'trace', 'debug', 'info', 'warn', 'error'}
+        .contains(preferences.logLevel)) {
+      throw ConfigCompileException(
+        'Unsupported core log level: ${preferences.logLevel}',
+      );
+    }
   }
 
   Map<String, Object> _compileDnsServer(
-    String address, {
+    String raw, {
     required String tag,
     String? detour,
+    bool requireIpAddress = false,
   }) {
-    final normalized = address.trim();
-    if (normalized == 'local') {
-      return <String, Object>{'type': 'local', 'tag': tag};
+    final value = raw.trim();
+    if (value.isEmpty) {
+      throw ConfigCompileException('$tag DNS server is empty');
     }
 
-    final uri = Uri.tryParse(normalized);
+    final uri = value.contains('://')
+        ? Uri.tryParse(value)
+        : Uri.tryParse('udp://$value');
     if (uri == null || uri.host.isEmpty) {
-      throw OutboundCompileException('Invalid DNS server: $address');
+      throw ConfigCompileException('Invalid DNS server: $value');
     }
-    final type = switch (uri.scheme) {
-      'https' => 'https',
-      'tls' => 'tls',
+
+    final scheme = uri.scheme.toLowerCase();
+    final type = switch (scheme) {
+      'udp' => 'udp',
       'tcp' => 'tcp',
-      'udp' || '' => 'udp',
-      _ => throw OutboundCompileException(
-          'Unsupported DNS transport: ${uri.scheme}',
-        ),
+      'tls' || 'dot' => 'tls',
+      'https' || 'doh' => 'https',
+      'h3' || 'http3' => 'h3',
+      _ => throw ConfigCompileException('Unsupported DNS scheme: $scheme'),
     };
-    return <String, Object>{
+
+    if (requireIpAddress && InternetAddress.tryParse(uri.host) == null) {
+      throw ConfigCompileException(
+        'Direct/bootstrap DNS must use an IP address to avoid a DNS dependency loop',
+      );
+    }
+
+    final defaultPort = switch (type) {
+      'tls' => 853,
+      'https' || 'h3' => 443,
+      _ => 53,
+    };
+
+    final result = <String, Object>{
       'type': type,
       'tag': tag,
       'server': uri.host,
-      if (uri.hasPort) 'server_port': uri.port,
-      if (type == 'https' && uri.path.isNotEmpty) 'path': uri.path,
+      'server_port': uri.hasPort ? uri.port : defaultPort,
       if (detour != null) 'detour': detour,
     };
+
+    if (type == 'https' || type == 'h3') {
+      result['path'] = uri.path.isEmpty ? '/dns-query' : uri.path;
+    }
+    if (type == 'tls' || type == 'https' || type == 'h3') {
+      result['tls'] = <String, Object>{
+        'enabled': true,
+        'server_name': uri.host,
+      };
+    }
+
+    return result;
   }
+
+  static const _allowedAndroidTunPatchKeys = <String>{
+    'include_package',
+    'exclude_package',
+    'include_android_user',
+  };
 }
