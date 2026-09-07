@@ -459,17 +459,7 @@ class AppController extends StateNotifier<AppState> {
         ConnectionSnapshot(
           node: node,
           platform: RoutingPlatform.linux,
-          logLevel: state.corePreferences.logLevel,
-          dns: DnsPolicy(
-            remoteServer: state.corePreferences.remoteDns,
-            directServer: state.corePreferences.directDns,
-          ),
-          tun: TunOptions(
-            mtu: state.corePreferences.mtu,
-            strictRoute: state.corePreferences.strictRoute,
-            stack: state.corePreferences.stack,
-            ipv6: state.corePreferences.ipv6,
-          ),
+          preferences: state.corePreferences,
         ),
       );
       _startMetrics();

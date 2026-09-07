@@ -2,11 +2,11 @@ class CorePreferences {
   const CorePreferences({
     this.logLevel = 'info',
     this.stack = 'mixed',
-    this.mtu = 9000,
-    this.strictRoute = true,
-    this.ipv6 = true,
+    this.mtu = 1400,
+    this.strictRoute = false,
+    this.ipv6 = false,
     this.remoteDns = 'https://1.1.1.1/dns-query',
-    this.directDns = 'local',
+    this.directDns = '1.1.1.1',
   });
 
   final String logLevel;
@@ -50,10 +50,10 @@ class CorePreferences {
       CorePreferences(
         logLevel: json['logLevel'] as String? ?? 'info',
         stack: json['stack'] as String? ?? 'mixed',
-        mtu: (json['mtu'] as num?)?.toInt() ?? 9000,
-        strictRoute: json['strictRoute'] as bool? ?? true,
-        ipv6: json['ipv6'] as bool? ?? true,
+        mtu: (json['mtu'] as num?)?.toInt() ?? 1400,
+        strictRoute: json['strictRoute'] as bool? ?? false,
+        ipv6: json['ipv6'] as bool? ?? false,
         remoteDns: json['remoteDns'] as String? ?? 'https://1.1.1.1/dns-query',
-        directDns: json['directDns'] as String? ?? 'local',
+        directDns: json['directDns'] as String? ?? '1.1.1.1',
       );
 }
