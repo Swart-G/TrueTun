@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+bundle_dir="$(cd "$(dirname "$0")" && pwd)"
+core_binary="$bundle_dir/sing-box"
+helper_binary="$bundle_dir/truetun-core-helper"
+system_core_dir="/usr/local/libexec/truetun"
+system_core="$system_core_dir/sing-box"
+system_helper="$system_core_dir/truetun-core-helper"
+login_user="$(id -un)"
+
+if ! command -v pkexec >/dev/null 2>&1; then
+  echo "TrueTun requires pkexec (Polkit) to prepare the TUN core." >&2
+  exit 1
+fi
+
+# Request authentication only for first install or an updated bundle. The narrowly scoped
+# sudoers rule allows only config validation and core startup through the
+# root-owned helper. sing-box then has permission to configure both TUN and
+# systemd-resolved without opening another PolicyKit password dialog.
+installed_version="$($system_core version 2>/dev/null | head -n 1 || true)"
+bundled_version="$($core_binary version 2>/dev/null | head -n 1 || true)"
+helper_ready=false
+if [[ -x "$system_helper" && "$installed_version" == "$bundled_version" ]]; then
+  if printf '%s' '{"log":{"disabled":true},"inbounds":[],"outbounds":[{"type":"direct","tag":"direct"}],"route":{"final":"direct"}}' \
+    | sudo -n -- "$system_helper" check >/dev/null 2>&1; then
+    helper_ready=true
+  fi
+fi
+
+if [[ "$helper_ready" != true ]]; then
+pkexec /bin/bash -c \
+  'set -eu
+   user_name="$1"
+   core_dir="$2"
+   core_source="$3"
+   core_target="$4"
+   helper_source="$5"
+   helper_target="$6"
+   case "$user_name" in
+     ""|*[!a-zA-Z0-9_-]*) echo "Invalid login name" >&2; exit 64 ;;
+   esac
+   install -d -o root -g root -m 0755 "$core_dir"
+   install -o root -g root -m 0755 "$core_source" "$core_target"
+   install -o root -g root -m 0755 "$helper_source" "$helper_target"
+   sudoers_target="/etc/sudoers.d/truetun-${user_name}"
+   sudoers_temp="${sudoers_target}.tmp"
+   printf "%s ALL=(root) NOPASSWD: %s check\n%s ALL=(root) NOPASSWD: %s run\n" \
+     "$user_name" "$helper_target" "$user_name" "$helper_target" > "$sudoers_temp"
+   chown root:root "$sudoers_temp"
+   chmod 0440 "$sudoers_temp"
+   /usr/bin/visudo -cf "$sudoers_temp"
+   mv -f "$sudoers_temp" "$sudoers_target"' \
+  truetun-install "$login_user" "$system_core_dir" "$core_binary" \
+  "$system_core" "$helper_binary" "$system_helper"
+fi
+export TRUETUN_CORE_PATH="$system_core"
+export TRUETUN_CORE_HELPER="$system_helper"
+exec "$bundle_dir/@APP_BINARY@" "$@"
