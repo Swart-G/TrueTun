@@ -59,7 +59,11 @@ This first foundation contains:
 - Architecture, routing, protocol and implementation-roadmap documentation.
 - Unit tests and GitHub Actions CI for format/analyze/tests.
 
-Android and Linux Flutter platform shells are committed. The next platform step is native Android `VpnService`/mobile-core integration and production Linux core packaging. The domain model is already shaped so native details do not leak into profiles, routing or the UI.
+The Linux client is usable with the packaged extended core, persistent profiles,
+subscriptions, diagnostics, traffic statistics, tray mode, and autostart. The
+Android APK currently provides the application UI and persistent profile
+management; native `VpnService`/mobile-core integration is still required before
+Android can carry device traffic.
 
 ## Core strategy
 
