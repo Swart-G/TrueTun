@@ -2,12 +2,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:truetun/src/android_dialogs.dart';
 import 'package:truetun/src/application/app_state.dart';
 import 'package:truetun/src/apps/app_routing_policy.dart';
 import 'package:truetun/src/core/core_adapter.dart';
 import 'package:truetun/src/core/core_preferences.dart';
 import 'package:truetun/src/platform/android/android_platform_bridge.dart';
-import 'package:truetun/src/profiles/profile_group.dart';
 import 'package:truetun/src/routing/routing_rule.dart';
 
 class TrueTunAndroidApp extends StatelessWidget {
@@ -531,7 +531,7 @@ class _RoutingPage extends ConsumerWidget {
           IconButton(
             tooltip: 'Add rule',
             onPressed: () async {
-              final rule = await _editRule(context);
+              final rule = await showTrueTunRoutingRuleDialog(context);
               if (rule != null) await controller.addRoutingRule(rule);
             },
             icon: const Icon(Icons.add),
@@ -562,7 +562,10 @@ class _RoutingPage extends ConsumerWidget {
                       '${_ruleSummary(rule)} → ${_actionLabel(rule.action)}',
                     ),
                     onTap: () async {
-                      final updated = await _editRule(context, existing: rule);
+                      final updated = await showTrueTunRoutingRuleDialog(
+                        context,
+                        existing: rule,
+                      );
                       if (updated != null) {
                         await controller.updateRoutingRule(updated);
                       }
@@ -905,7 +908,7 @@ class _SettingsPageState extends ConsumerState<_SettingsPage> {
     BuildContext context,
     CorePreferences preferences,
   ) async {
-    final raw = await _textDialog(
+    final raw = await showTrueTunTextDialog(
       context,
       title: 'MTU',
       label: '1280–65535',
@@ -924,7 +927,7 @@ class _SettingsPageState extends ConsumerState<_SettingsPage> {
     CorePreferences preferences, {
     required bool remote,
   }) async {
-    final value = await _textDialog(
+    final value = await showTrueTunTextDialog(
       context,
       title: remote ? 'Remote DNS' : 'Bootstrap DNS',
       label: remote ? 'DoH URL or DNS address' : 'IP address',
@@ -979,7 +982,7 @@ Future<void> _showAddProfileMenu(BuildContext context, WidgetRef ref) async {
   if (!context.mounted || action == null) return;
 
   if (action == 'profile') {
-    final input = await _textDialog(
+    final input = await showTrueTunTextDialog(
       context,
       title: 'Import proxy',
       label: 'VLESS / Hysteria2 link or config',
@@ -989,7 +992,7 @@ Future<void> _showAddProfileMenu(BuildContext context, WidgetRef ref) async {
       ref.read(appControllerProvider.notifier).importProfile(input);
     }
   } else if (action == 'group') {
-    final name = await _textDialog(
+    final name = await showTrueTunTextDialog(
       context,
       title: 'Create group',
       label: 'Name',
@@ -998,7 +1001,7 @@ Future<void> _showAddProfileMenu(BuildContext context, WidgetRef ref) async {
       ref.read(appControllerProvider.notifier).createGroup(name);
     }
   } else if (action == 'subscription') {
-    final subscription = await _subscriptionDialog(context);
+    final subscription = await showTrueTunSubscriptionDialog(context);
     if (subscription != null) {
       await ref.read(appControllerProvider.notifier).addSubscription(
             subscription.$1,
@@ -1007,206 +1010,6 @@ Future<void> _showAddProfileMenu(BuildContext context, WidgetRef ref) async {
     }
   }
 }
-
-Future<RoutingRule?> _editRule(
-  BuildContext context, {
-  RoutingRule? existing,
-}) async {
-  final name = TextEditingController(text: existing?.name ?? 'New rule');
-  final domains = TextEditingController(
-    text: existing?.matcher.domains.join('\n') ?? '',
-  );
-  final suffixes = TextEditingController(
-    text: existing?.matcher.domainSuffixes.join('\n') ?? '',
-  );
-  final cidrs = TextEditingController(
-    text: existing?.matcher.ipCidrs.join('\n') ?? '',
-  );
-  var action = existing?.action.type ?? RouteActionType.proxy;
-
-  final result = await showDialog<RoutingRule>(
-    context: context,
-    builder: (dialogContext) => StatefulBuilder(
-      builder: (dialogContext, setDialogState) => AlertDialog(
-        title: Text(
-          existing == null ? 'Add routing rule' : 'Edit routing rule',
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: name,
-                decoration: const InputDecoration(labelText: 'Name'),
-              ),
-              TextField(
-                controller: domains,
-                minLines: 1,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Exact domains'),
-              ),
-              TextField(
-                controller: suffixes,
-                minLines: 1,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Domain suffixes',
-                ),
-              ),
-              TextField(
-                controller: cidrs,
-                minLines: 1,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'IP CIDRs'),
-              ),
-              DropdownButtonFormField<RouteActionType>(
-                initialValue: action,
-                decoration: const InputDecoration(labelText: 'Action'),
-                items: const [
-                  DropdownMenuItem(
-                    value: RouteActionType.proxy,
-                    child: Text('Proxy'),
-                  ),
-                  DropdownMenuItem(
-                    value: RouteActionType.direct,
-                    child: Text('Direct'),
-                  ),
-                  DropdownMenuItem(
-                    value: RouteActionType.block,
-                    child: Text('Block'),
-                  ),
-                ],
-                onChanged: (value) {
-                  if (value != null) setDialogState(() => action = value);
-                },
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final matcher = RuleMatcher(
-                domains: _lines(domains.text),
-                domainSuffixes: _lines(suffixes.text),
-                ipCidrs: _lines(cidrs.text),
-              );
-              if (name.text.trim().isEmpty || matcher.isEmpty) return;
-              final routeAction = switch (action) {
-                RouteActionType.proxy => const RouteAction.proxy('proxy'),
-                RouteActionType.direct => const RouteAction.direct(),
-                RouteActionType.block => const RouteAction.block(),
-              };
-              Navigator.pop(
-                dialogContext,
-                RoutingRule(
-                  id: existing?.id ??
-                      'rule-${DateTime.now().microsecondsSinceEpoch}',
-                  name: name.text.trim(),
-                  matcher: matcher,
-                  action: routeAction,
-                  enabled: existing?.enabled ?? true,
-                ),
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    ),
-  );
-
-  name.dispose();
-  domains.dispose();
-  suffixes.dispose();
-  cidrs.dispose();
-  return result;
-}
-
-Future<String?> _textDialog(
-  BuildContext context, {
-  required String title,
-  required String label,
-  String? initialValue,
-  int maxLines = 1,
-}) async {
-  final controller = TextEditingController(text: initialValue);
-  final result = await showDialog<String>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(title),
-      content: TextField(
-        controller: controller,
-        autofocus: true,
-        minLines: maxLines > 1 ? 2 : 1,
-        maxLines: maxLines,
-        decoration: InputDecoration(labelText: label),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(dialogContext, controller.text),
-          child: const Text('Save'),
-        ),
-      ],
-    ),
-  );
-  controller.dispose();
-  return result;
-}
-
-Future<(String, String)?> _subscriptionDialog(BuildContext context) async {
-  final name = TextEditingController();
-  final url = TextEditingController();
-  final result = await showDialog<(String, String)>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: const Text('Add subscription'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(
-            controller: name,
-            decoration: const InputDecoration(labelText: 'Name'),
-          ),
-          TextField(
-            controller: url,
-            decoration: const InputDecoration(labelText: 'URL'),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(dialogContext),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          onPressed: () => Navigator.pop(
-            dialogContext,
-            (name.text, url.text),
-          ),
-          child: const Text('Add'),
-        ),
-      ],
-    ),
-  );
-  name.dispose();
-  url.dispose();
-  return result;
-}
-
-List<String> _lines(String value) => value
-    .split(RegExp(r'[,\n]'))
-    .map((entry) => entry.trim())
-    .where((entry) => entry.isNotEmpty)
-    .toList(growable: false);
 
 String _pingLabel(int? value) {
   if (value == null) return 'Test';
