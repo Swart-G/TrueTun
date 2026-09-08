@@ -19,6 +19,10 @@ class AndroidPlatformBridge {
     await _invoke<bool>('stop');
   }
 
+  Future<void> openVpnSettings() async {
+    await _invoke<bool>('openVpnSettings');
+  }
+
   Future<Map<String, Object?>> getState() async {
     final result = await _invoke<Map<Object?, Object?>>('getState') ?? const {};
     return result.map((key, value) => MapEntry(key.toString(), value));
@@ -51,7 +55,8 @@ class AndroidPlatformBridge {
       }
       return InstalledAppDescriptor(
         packageName: entry['packageName']?.toString() ?? '',
-        label: entry['label']?.toString() ?? entry['packageName']?.toString() ?? '',
+        label:
+            entry['label']?.toString() ?? entry['packageName']?.toString() ?? '',
         category: category,
         isSystem: entry['isSystem'] == true,
         uid: (entry['uid'] as num?)?.toInt(),
