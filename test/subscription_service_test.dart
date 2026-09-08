@@ -16,6 +16,29 @@ void main() {
     expect(profiles.single.node.name, 'Subscription node');
   });
 
+  test('parses mixed VLESS and Hysteria2 share-link subscription', () {
+    const service = SubscriptionService();
+    const hy2 = 'hy2://password@hy.example.com:443/?sni=hy.example.com#HY2';
+    final profiles = service.parse('$link\n$hy2\n');
+    expect(profiles, hasLength(2));
+    expect(profiles.last.node.protocol.name, 'hysteria2');
+  });
+
+  test('parses Mihomo Hysteria2 YAML subscription', () {
+    const service = SubscriptionService();
+    final profiles = service.parse('''
+proxies:
+  - name: HY2 YAML
+    type: hysteria2
+    server: hy.example.com
+    port: 443
+    password: secret
+    sni: hy.example.com
+''');
+    expect(profiles, hasLength(1));
+    expect(profiles.single.node.name, 'HY2 YAML');
+  });
+
   test('downloads a plain subscription', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final serving = server.first.then((request) async {

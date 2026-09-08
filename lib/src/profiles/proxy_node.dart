@@ -123,3 +123,76 @@ class VlessNode extends ProxyNode {
     );
   }
 }
+
+class Hysteria2ObfsOptions {
+  const Hysteria2ObfsOptions({
+    required this.type,
+    required this.password,
+    this.minPacketSize,
+    this.maxPacketSize,
+  });
+
+  final String type;
+  final String password;
+  final int? minPacketSize;
+  final int? maxPacketSize;
+}
+
+class Hysteria2Node extends ProxyNode {
+  const Hysteria2Node({
+    required super.name,
+    required super.server,
+    required super.port,
+    required this.password,
+    required this.tls,
+    this.serverPorts = const [],
+    this.hopInterval,
+    this.hopIntervalMax,
+    this.upMbps,
+    this.downMbps,
+    this.obfs,
+    this.extensions = const {},
+  }) : super(protocol: ProxyProtocol.hysteria2);
+
+  final String password;
+  final TlsOptions tls;
+
+  /// Optional sing-box port-hopping ranges such as `20000:30000`.
+  final List<String> serverPorts;
+  final String? hopInterval;
+  final String? hopIntervalMax;
+  final int? upMbps;
+  final int? downMbps;
+  final Hysteria2ObfsOptions? obfs;
+  final Map<String, String> extensions;
+
+  Hysteria2Node copyWith({
+    String? name,
+    String? server,
+    int? port,
+    String? password,
+    TlsOptions? tls,
+    List<String>? serverPorts,
+    String? hopInterval,
+    String? hopIntervalMax,
+    int? upMbps,
+    int? downMbps,
+    Hysteria2ObfsOptions? obfs,
+    Map<String, String>? extensions,
+  }) {
+    return Hysteria2Node(
+      name: name ?? this.name,
+      server: server ?? this.server,
+      port: port ?? this.port,
+      password: password ?? this.password,
+      tls: tls ?? this.tls,
+      serverPorts: serverPorts ?? this.serverPorts,
+      hopInterval: hopInterval ?? this.hopInterval,
+      hopIntervalMax: hopIntervalMax ?? this.hopIntervalMax,
+      upMbps: upMbps ?? this.upMbps,
+      downMbps: downMbps ?? this.downMbps,
+      obfs: obfs ?? this.obfs,
+      extensions: extensions ?? this.extensions,
+    );
+  }
+}

@@ -5,6 +5,7 @@ enum ProfileInputKind {
   remoteSubscriptionUrl,
   singBoxJson,
   clashOrMihomoYaml,
+  hysteria2Yaml,
   unknown,
 }
 
@@ -43,6 +44,7 @@ class ProfileInputDetector {
 
     if (_looksLikeSingBoxJson(input)) return ProfileInputKind.singBoxJson;
     if (_looksLikeClashYaml(input)) return ProfileInputKind.clashOrMihomoYaml;
+    if (_looksLikeHysteria2Yaml(input)) return ProfileInputKind.hysteria2Yaml;
 
     final nonEmptyLines = input
         .split(RegExp(r'\r?\n'))
@@ -74,6 +76,12 @@ class ProfileInputDetector {
         normalized.startsWith('proxies:') ||
         normalized.contains('\nproxy-providers:') ||
         normalized.contains('\nrules:');
+  }
+
+  bool _looksLikeHysteria2Yaml(String input) {
+    final normalized = input.toLowerCase();
+    return RegExp(r'(^|\n)\s*server\s*:').hasMatch(normalized) &&
+        RegExp(r'(^|\n)\s*auth\s*:').hasMatch(normalized);
   }
 
   bool _looksLikeBase64(String input) {

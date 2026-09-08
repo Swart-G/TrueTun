@@ -317,7 +317,7 @@ class _ProfilesPage extends ConsumerWidget {
           children: [
             ListTile(
               leading: const Icon(Icons.link),
-              title: const Text('Import VLESS link'),
+              title: const Text('Import proxy link / config'),
               onTap: () => Navigator.pop(context, 'link'),
             ),
             ListTile(
@@ -429,13 +429,15 @@ class _ProfilesPage extends ConsumerWidget {
     final link = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Import VLESS link'),
+        title: const Text('Import proxy link / config'),
         content: TextField(
           controller: input,
           autofocus: true,
           minLines: 2,
           maxLines: 5,
-          decoration: const InputDecoration(hintText: 'vless://...'),
+          decoration: const InputDecoration(
+            hintText: 'vless://… / hysteria2://… / Hysteria2 YAML',
+          ),
         ),
         actions: [
           TextButton(
@@ -453,7 +455,7 @@ class _ProfilesPage extends ConsumerWidget {
     if (link != null && link.trim().isNotEmpty) {
       ref
           .read(appControllerProvider.notifier)
-          .importVless(link, targetGroupId: targetGroupId);
+          .importProfile(link, targetGroupId: targetGroupId);
     }
   }
 
@@ -566,6 +568,16 @@ class _ProfilesPage extends ConsumerWidget {
     ManagedProfile profile,
   ) async {
     final node = profile.node;
+    if (node is! VlessNode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Hysteria2 profile editing is not available yet; re-import the profile to change it.',
+          ),
+        ),
+      );
+      return;
+    }
     final name = TextEditingController(text: node.name);
     final server = TextEditingController(text: node.server);
     final port = TextEditingController(text: node.port.toString());
@@ -1241,7 +1253,7 @@ class _ProfileGroupCardState extends State<_ProfileGroupCard> {
                 ),
                 if (!group.isSubscription)
                   IconButton(
-                    tooltip: 'Add VLESS profile',
+                    tooltip: 'Add proxy profile',
                     onPressed: widget.onAddProfile,
                     icon: const Icon(Icons.add_link),
                   ),
@@ -1305,8 +1317,7 @@ class _ProfileGroupCardState extends State<_ProfileGroupCard> {
                             ),
                             title: Text(profile.node.name),
                             subtitle: Text(
-                              '${profile.node.server}:${profile.node.port} · '
-                              '${profile.node.transport.type.name}',
+                              '${profile.node.server}:${profile.node.port} · ${_profileTypeLabel(profile.node)}',
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -1392,6 +1403,13 @@ class _GroupEditResult {
   final Uri? url;
   final bool autoUpdate;
   final int interval;
+}
+
+String _profileTypeLabel(ProxyNode node) {
+  return switch (node) {
+    VlessNode(:final transport) => 'VLESS · ${transport.type.name}',
+    Hysteria2Node() => 'Hysteria2',
+  };
 }
 
 String _formatInterval(int minutes) {

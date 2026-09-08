@@ -11,7 +11,7 @@ import 'package:truetun/src/core/process_sing_box_adapter.dart';
 import 'package:truetun/src/profiles/proxy_node.dart';
 import 'package:truetun/src/profiles/profile_group.dart';
 import 'package:truetun/src/profiles/subscription_service.dart';
-import 'package:truetun/src/profiles/vless_link_parser.dart';
+import 'package:truetun/src/profiles/proxy_profile_parser.dart';
 import 'package:truetun/src/persistence/app_database.dart';
 import 'package:truetun/src/persistence/profile_repository.dart';
 import 'package:truetun/src/routing/routing_rule.dart';
@@ -38,7 +38,7 @@ class AppState {
     this.minimizeToTray = true,
   });
 
-  final VlessNode? node;
+  final ProxyNode? node;
   final ProxyCoreState coreState;
   final String? error;
   final List<String> logs;
@@ -57,7 +57,7 @@ class AppState {
   final bool minimizeToTray;
 
   AppState copyWith({
-    VlessNode? node,
+    ProxyNode? node,
     bool clearNode = false,
     ProxyCoreState? coreState,
     String? error,
@@ -128,7 +128,7 @@ final appControllerProvider =
 
 class AppController extends StateNotifier<AppState> {
   AppController({
-    VlessLinkParser parser = const VlessLinkParser(),
+    ProxyProfileParser parser = const ProxyProfileParser(),
     ConnectionController? connection,
     ConnectionDiagnostics diagnostics = const ConnectionDiagnostics(),
     SubscriptionService subscriptions = const SubscriptionService(),
@@ -147,7 +147,7 @@ class AppController extends StateNotifier<AppState> {
     if (Platform.isLinux) unawaited(_restoreDesktopSettings());
   }
 
-  final VlessLinkParser _parser;
+  final ProxyProfileParser _parser;
   final ConnectionController _connection;
   final ConnectionDiagnostics _diagnostics;
   final SubscriptionService _subscriptions;
@@ -159,7 +159,7 @@ class AppController extends StateNotifier<AppState> {
   bool _metricsReadInProgress = false;
   final Map<String, Timer> _autoUpdateTimers = {};
 
-  void importVless(String link, {String targetGroupId = 'manual'}) {
+  void importProfile(String link, {String targetGroupId = 'manual'}) {
     try {
       final node = _parser.parse(link);
       final profile = ManagedProfile(
@@ -192,6 +192,11 @@ class AppController extends StateNotifier<AppState> {
     } catch (error) {
       state = state.copyWith(error: error.toString());
     }
+  }
+
+  @Deprecated('Use importProfile for protocol-neutral imports')
+  void importVless(String link, {String targetGroupId = 'manual'}) {
+    importProfile(link, targetGroupId: targetGroupId);
   }
 
   void createGroup(String name) {
@@ -244,7 +249,7 @@ class AppController extends StateNotifier<AppState> {
   Future<void> updateProfile({
     required String groupId,
     required String profileId,
-    required VlessNode node,
+    required ProxyNode node,
   }) async {
     final group = state.groups.where((item) => item.id == groupId).firstOrNull;
     if (group == null) return;
@@ -405,7 +410,7 @@ class AppController extends StateNotifier<AppState> {
       final minimizeToTray = await _repository.loadMinimizeToTray();
       if (!mounted) return;
       if (state.groups.isNotEmpty) return;
-      VlessNode? selectedNode;
+      ProxyNode? selectedNode;
       if (selection.$1 != null && selection.$2 != null) {
         final group =
             groups.where((value) => value.id == selection.$1).firstOrNull;

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:truetun/src/core/connection_snapshot.dart';
 import 'package:truetun/src/core/core_preferences.dart';
@@ -31,6 +33,24 @@ void main() {
     expect(route['auto_detect_interface'], isTrue);
     expect(route['default_domain_resolver'], 'dns-direct');
     expect(route['final'], 'proxy');
+
+    final experimental = config['experimental']! as Map<String, Object>;
+    final clashApi = experimental['clash_api']! as Map<String, Object>;
+    expect(clashApi['external_controller'], '127.0.0.1:19090');
+  });
+
+  test('Android config exposes no local controller or listening socket', () {
+    final config = compiler.compileMap(
+      ConnectionSnapshot(node: node, platform: RoutingPlatform.android),
+    );
+
+    expect(config.containsKey('experimental'), isFalse);
+
+    final encoded = jsonEncode(config).toLowerCase();
+    expect(encoded, isNot(contains('127.0.0.1')));
+    expect(encoded, isNot(contains('localhost')));
+    expect(encoded, isNot(contains('external_controller')));
+    expect(encoded, isNot(contains('listen_port')));
   });
 
   test('DNS bootstrap is direct and user DNS is proxied', () {

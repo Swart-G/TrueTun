@@ -11,7 +11,7 @@ class ConnectionSnapshot {
     this.androidTunPatch = const {},
   });
 
-  final VlessNode node;
+  final ProxyNode node;
   final RoutingPlatform platform;
   final CorePreferences preferences;
   final List<RoutingRule> routingRules;

@@ -55,6 +55,7 @@ This first foundation contains:
 - Local explainable smart-app suggestion baseline.
 - Profile input detection for share links, subscription URLs, sing-box JSON and Clash/Mihomo YAML.
 - Typed VLESS parser with TLS, Reality, uTLS fingerprint, WebSocket, gRPC, HTTPUpgrade and XHTTP import preservation.
+- Hysteria2 import from `hysteria2://` / `hy2://`, official client YAML, sing-box JSON, and Mihomo/Clash YAML, with sing-box outbound compilation and persistence.
 - Stable-backend VLESS -> sing-box outbound compiler. XHTTP remains capability-gated for an extended backend rather than being silently miscompiled.
 - Architecture, routing, protocol and implementation-roadmap documentation.
 - Unit tests and GitHub Actions CI for format/analyze/tests.
