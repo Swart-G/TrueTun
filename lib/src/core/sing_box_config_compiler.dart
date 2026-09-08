@@ -104,11 +104,15 @@ class SingBoxConfigCompiler {
         <String, Object>{'type': 'direct', 'tag': 'direct'},
       ],
       'route': route,
-      'experimental': <String, Object>{
-        'clash_api': <String, Object>{
-          'external_controller': '127.0.0.1:19090',
+      // Desktop Linux reads traffic counters from sing-box's loopback Clash
+      // API. Android must never expose a local HTTP/controller socket; mobile
+      // metrics have to come through the native core bridge instead.
+      if (snapshot.platform == RoutingPlatform.linux)
+        'experimental': <String, Object>{
+          'clash_api': <String, Object>{
+            'external_controller': '127.0.0.1:19090',
+          },
         },
-      },
     };
   }
 
