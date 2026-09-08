@@ -3,10 +3,6 @@ include: package:flutter_lints/flutter.yaml
 analyzer:
   errors:
     avoid_print: error
-    # Temporary while the optimized Android shell is being stabilized on the
-    # native-runtime branch. This remains visible to reviewers but must not
-    # block device-test APKs for an otherwise compile-clean UI replacement.
-    unused_import: ignore
   exclude:
     - build/**
     - android/**
