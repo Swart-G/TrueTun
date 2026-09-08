@@ -46,6 +46,14 @@ class ConnectionDiagnostics {
   }
 
   Future<Duration> testProfile(ProxyNode node) async {
+    // The desktop implementation starts a short-lived loopback proxy to test
+    // the complete outbound. Android must never open local listening sockets,
+    // so mobile profile probing falls back to the remote endpoint only. Full
+    // Android proxy diagnostics belong in the native core bridge.
+    if (!Platform.isLinux) {
+      return testEndpoint(node.server, node.port);
+    }
+
     final listener = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
     final port = listener.port;
     await listener.close();
@@ -175,6 +183,12 @@ class ConnectionDiagnostics {
   }
 
   Future<TrafficSnapshot> readTraffic() async {
+    if (!Platform.isLinux) {
+      throw UnsupportedError(
+        'Loopback metrics API is Linux-only; Android metrics must use the native core bridge',
+      );
+    }
+
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 2);
     try {
       final request = await client.getUrl(
