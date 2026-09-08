@@ -14,76 +14,47 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Extract and apply staged patch
+      - name: Fix compatibility and lint regressions
         shell: bash
         run: |
           python3 - <<'PY'
-          import base64, gzip, re
           from pathlib import Path
-          workflow = Path('.github/workflows/apply-traffic-hysteria-patch.yml').read_text()
-          match = re.search(r"echo '([^']+)' \| base64 -d \| gzip -d > /tmp/apply_patch.py", workflow)
-          if not match:
-              raise SystemExit('Unable to extract staged patch payload')
-          Path('/tmp/apply_patch.py').write_bytes(gzip.decompress(base64.b64decode(match.group(1))))
-          PY
-          python3 /tmp/apply_patch.py
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('lib/src/app.dart')
-          content = path.read_text()
-          old = "                              '${profile.node.server}:${profile.node.port} · '\n                              _profileTypeLabel(profile.node),"
-          new = "                              '${profile.node.server}:${profile.node.port} · ' +\n                              _profileTypeLabel(profile.node),"
+
+          app = Path('lib/src/app.dart')
+          content = app.read_text()
+          old = """                            subtitle: Text(\n                              '${profile.node.server}:${profile.node.port} · ' +\n                                  _profileTypeLabel(profile.node),\n                            ),"""
+          new = """                            subtitle: Text(\n                              '${profile.node.server}:${profile.node.port} · ${_profileTypeLabel(profile.node)}',\n                            ),"""
           if old not in content:
-              raise SystemExit('Expected app.dart Hysteria2 label insertion was not found')
-          path.write_text(content.replace(old, new, 1))
+              raise SystemExit('Expected profile subtitle composition not found')
+          app.write_text(content.replace(old, new, 1))
+
+          state = Path('lib/src/application/app_state.dart')
+          content = state.read_text()
+          marker = """  void createGroup(String name) {"""
+          wrapper = """  @Deprecated('Use importProfile for protocol-neutral imports')\n  void importVless(String link, {String targetGroupId = 'manual'}) {\n    importProfile(link, targetGroupId: targetGroupId);\n  }\n\n"""
+          if marker not in content:
+              raise SystemExit('AppController createGroup marker not found')
+          if 'void importVless(' not in content:
+              content = content.replace(marker, wrapper + marker, 1)
+          state.write_text(content)
           PY
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
       - run: flutter pub get
-      - name: Format, analyze and test
-        id: validate
+      - name: Validate
         shell: bash
         run: |
-          set +e
-          : > PATCH_DIAGNOSTICS.txt
-          echo '=== dart format ===' >> PATCH_DIAGNOSTICS.txt
-          dart format lib test >> PATCH_DIAGNOSTICS.txt 2>&1
-          format_status=$?
-          echo >> PATCH_DIAGNOSTICS.txt
-          if [ "$format_status" -eq 0 ]; then
-            echo '=== flutter analyze ===' >> PATCH_DIAGNOSTICS.txt
-            flutter analyze >> PATCH_DIAGNOSTICS.txt 2>&1
-            analyze_status=$?
-            echo >> PATCH_DIAGNOSTICS.txt
-            echo '=== flutter test ===' >> PATCH_DIAGNOSTICS.txt
-            flutter test >> PATCH_DIAGNOSTICS.txt 2>&1
-            test_status=$?
-          else
-            analyze_status=99
-            test_status=99
-          fi
-          set -e
-          cat PATCH_DIAGNOSTICS.txt
-          echo "format_status=$format_status" >> "$GITHUB_OUTPUT"
-          echo "analyze_status=$analyze_status" >> "$GITHUB_OUTPUT"
-          echo "test_status=$test_status" >> "$GITHUB_OUTPUT"
-      - name: Commit result
+          dart format lib test
+          flutter analyze
+          flutter test
+      - name: Commit validated fixes
         shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          if [ "${{ steps.validate.outputs.format_status }}" -eq 0 ] && \
-             [ "${{ steps.validate.outputs.analyze_status }}" -eq 0 ] && \
-             [ "${{ steps.validate.outputs.test_status }}" -eq 0 ]; then
-            git rm -f PATCH_DIAGNOSTICS.txt
-            git add -A
-            git commit -m 'fix: restore traffic metrics and add Hysteria2 profiles'
-            git push origin HEAD:fix/traffic-hysteria2
-          else
-            git add -A
-            git commit -m 'chore: stage Hysteria2 patch validation failure'
-            git push origin HEAD:fix/traffic-hysteria2
-            exit 1
-          fi
+          git rm -f PATCH_DIAGNOSTICS.txt
+          git add lib/src/app.dart lib/src/application/app_state.dart
+          git commit -m 'fix: complete Hysteria2 validation fixes'
+          git push origin HEAD:fix/traffic-hysteria2
