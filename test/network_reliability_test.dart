@@ -31,6 +31,10 @@ void main() {
     expect(route['auto_detect_interface'], isTrue);
     expect(route['default_domain_resolver'], 'dns-direct');
     expect(route['final'], 'proxy');
+
+    final experimental = config['experimental']! as Map<String, Object>;
+    final clashApi = experimental['clash_api']! as Map<String, Object>;
+    expect(clashApi['external_controller'], '127.0.0.1:19090');
   });
 
   test('DNS bootstrap is direct and user DNS is proxied', () {

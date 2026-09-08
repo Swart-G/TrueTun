@@ -1,14 +1,71 @@
-Could not format because the source could not be parsed:
-
-line 1321, column 31 of lib/src/app.dart: Expected to find ','.
-     ╷
-1321 │                               _profileTypeLabel(profile.node),
-     │                               ^^^^^^^^^^^^^^^^^
-     ╵
+=== dart format ===
+Formatted lib/src/app.dart
 Formatted lib/src/core/sing_box_config_compiler.dart
 Formatted lib/src/core/sing_box_outbound_compiler.dart
 Formatted lib/src/persistence/profile_repository.dart
 Formatted lib/src/profiles/hysteria2_profile_parser.dart
 Formatted lib/src/profiles/subscription_service.dart
 Formatted test/hysteria2_test.dart
-Formatted 33 files (6 changed) in 0.09 seconds.
+Formatted 34 files (7 changed) in 0.11 seconds.
+
+=== flutter analyze ===
+Analyzing TrueTun...                                            
+
+   info • Use interpolation to compose strings and values. Try using string interpolation to build the composite string • lib/src/app.dart:1320:31 • prefer_interpolation_to_compose_strings
+  error • The method 'importVless' isn't defined for the type 'AppController'. Try correcting the name to the name of an existing method, or defining a method named 'importVless' • test/widget_test.dart:38:16 • undefined_method
+
+2 issues found. (ran in 8.5s)
+
+=== flutter test ===
+
+::group::✅ Passing tests
+✅ /home/runner/work/TrueTun/TrueTun/test/routing_compiler_test.dart: compiles Android package rule to sing-box route rule
+test/widget_test.dart:38:16: Error: The method 'importVless' isn't defined for the type 'AppController'.
+ - 'AppController' is from 'package:truetun/src/application/app_state.dart' ('lib/src/application/app_state.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'importVless'.
+    controller.importVless(
+               ^^^^^^^^^^^
+✅ /home/runner/work/TrueTun/TrueTun/test/routing_compiler_test.dart: refuses Android-only matcher on Linux
+✅ /home/runner/work/TrueTun/TrueTun/test/routing_compiler_test.dart: compiles block rule using reject/drop
+✅ /home/runner/work/TrueTun/TrueTun/test/routing_compiler_test.dart: Android whitelist becomes include_package
+✅ /home/runner/work/TrueTun/TrueTun/test/routing_compiler_test.dart: detects VLESS share link
+✅ /home/runner/work/TrueTun/TrueTun/test/routing_compiler_test.dart: parses VLESS Reality and compiles stable sing-box outbound
+✅ /home/runner/work/TrueTun/TrueTun/test/routing_compiler_test.dart: preserves and compiles XHTTP for the extended core
+✅ /home/runner/work/TrueTun/TrueTun/test/routing_compiler_test.dart: preserves unknown VLESS query parameters
+✅ /home/runner/work/TrueTun/TrueTun/test/routing_compiler_test.dart: compiles a complete TUN configuration
+✅ /home/runner/work/TrueTun/TrueTun/test/routing_compiler_test.dart: pinned sing-box accepts a compiled TUN configuration
+✅ /home/runner/work/TrueTun/TrueTun/test/routing_compiler_test.dart: extended sing-box accepts a compiled XHTTP configuration
+✅ /home/runner/work/TrueTun/TrueTun/test/routing_compiler_test.dart: redacts credentials and sensitive query values
+::endgroup::
+::group::❌ loading /home/runner/work/TrueTun/TrueTun/test/widget_test.dart (failed)
+Failed to load "/home/runner/work/TrueTun/TrueTun/test/widget_test.dart":
+Compilation failed for testPath=/home/runner/work/TrueTun/TrueTun/test/widget_test.dart: test/widget_test.dart:38:16: Error: The method 'importVless' isn't defined for the type 'AppController'.
+ - 'AppController' is from 'package:truetun/src/application/app_state.dart' ('lib/src/application/app_state.dart').
+Try correcting the name to the name of an existing method, or defining a method named 'importVless'.
+    controller.importVless(
+               ^^^^^^^^^^^
+.
+
+::endgroup::
+::group::✅ Passing tests
+✅ /home/runner/work/TrueTun/TrueTun/test/connection_diagnostics_test.dart: endpoint latency performs real TCP connection attempts
+✅ /home/runner/work/TrueTun/TrueTun/test/subscription_service_test.dart: parses base64 subscription and removes duplicate nodes
+✅ /home/runner/work/TrueTun/TrueTun/test/persistence_test.dart: profile groups and selected profile survive reload
+✅ /home/runner/work/TrueTun/TrueTun/test/subscription_service_test.dart: parses mixed VLESS and Hysteria2 share-link subscription
+✅ /home/runner/work/TrueTun/TrueTun/test/persistence_test.dart: Hysteria2 profile survives secure persistence reload
+✅ /home/runner/work/TrueTun/TrueTun/test/persistence_test.dart: profiles are inserted, updated, and deleted transactionally
+✅ /home/runner/work/TrueTun/TrueTun/test/subscription_service_test.dart: parses Mihomo Hysteria2 YAML subscription
+✅ /home/runner/work/TrueTun/TrueTun/test/subscription_service_test.dart: downloads a plain subscription
+✅ /home/runner/work/TrueTun/TrueTun/test/network_reliability_test.dart: Linux TUN config has anti-loop routing and conservative MTU
+✅ /home/runner/work/TrueTun/TrueTun/test/network_reliability_test.dart: DNS bootstrap is direct and user DNS is proxied
+✅ /home/runner/work/TrueTun/TrueTun/test/network_reliability_test.dart: IPv6 is only advertised when explicitly enabled
+✅ /home/runner/work/TrueTun/TrueTun/test/network_reliability_test.dart: VLESS packetEncoding=none is encoded in sing-box form
+✅ /home/runner/work/TrueTun/TrueTun/test/network_reliability_test.dart: invalid bootstrap DNS hostname is rejected before core startup
+✅ /home/runner/work/TrueTun/TrueTun/test/hysteria2_test.dart: parses Hysteria2 URI including port hopping and obfs
+✅ /home/runner/work/TrueTun/TrueTun/test/hysteria2_test.dart: parses official Hysteria2 YAML config
+✅ /home/runner/work/TrueTun/TrueTun/test/hysteria2_test.dart: compiles Hysteria2 to sing-box outbound
+✅ /home/runner/work/TrueTun/TrueTun/test/hysteria2_test.dart: rejects Hysteria2 pinSHA256 instead of silently weakening TLS
+✅ /home/runner/work/TrueTun/TrueTun/test/hysteria2_test.dart: parses Mihomo Hysteria2 proxy entry
+::endgroup::
+
+::error::30 tests passed, 1 failed.

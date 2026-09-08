@@ -4,7 +4,7 @@ class ManagedProfile {
   const ManagedProfile({required this.id, required this.node});
 
   final String id;
-  final VlessNode node;
+  final ProxyNode node;
 }
 
 class ProfileGroup {

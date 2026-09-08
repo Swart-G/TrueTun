@@ -3,7 +3,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:truetun/src/persistence/app_database.dart';
 import 'package:truetun/src/persistence/profile_repository.dart';
+import 'package:truetun/src/profiles/hysteria2_profile_parser.dart';
 import 'package:truetun/src/profiles/profile_group.dart';
+import 'package:truetun/src/profiles/proxy_node.dart';
 import 'package:truetun/src/profiles/vless_link_parser.dart';
 
 void main() {
@@ -39,6 +41,27 @@ void main() {
     expect(restored.single.autoUpdateEnabled, isTrue);
     expect(restored.single.autoUpdateMinutes, 30);
     expect(selection, (group.id, 'node-1'));
+  });
+
+  test('Hysteria2 profile survives secure persistence reload', () async {
+    final repository = ProfileRepository(database: database);
+    final node = const Hysteria2ProfileParser().parse(
+      'hy2://password@hy.example.com:443/?sni=hy.example.com'
+      '&obfs=salamander&obfs-password=mask#Saved%20HY2',
+    );
+    final group = ProfileGroup(
+      id: 'hy2-group',
+      name: 'HY2 group',
+      profiles: [ManagedProfile(id: 'hy2-node', node: node)],
+    );
+    await repository.saveGroup(group);
+
+    final restored = await repository.loadGroups();
+    final restoredNode = restored.single.profiles.single.node;
+    expect(restoredNode, isA<Hysteria2Node>());
+    final hy2 = restoredNode as Hysteria2Node;
+    expect(hy2.password, 'password');
+    expect(hy2.obfs?.password, 'mask');
   });
 
   tearDown(() => database.close());

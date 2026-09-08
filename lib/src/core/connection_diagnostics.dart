@@ -45,7 +45,7 @@ class ConnectionDiagnostics {
     return attempts[attempts.length ~/ 2];
   }
 
-  Future<Duration> testProfile(VlessNode node) async {
+  Future<Duration> testProfile(ProxyNode node) async {
     final listener = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
     final port = listener.port;
     await listener.close();
@@ -69,7 +69,7 @@ class ConnectionDiagnostics {
           },
         ],
         'outbounds': <Map<String, Object>>[
-          const SingBoxOutboundCompiler().compileVless(node, tag: 'proxy'),
+          const SingBoxOutboundCompiler().compile(node, tag: 'proxy'),
         ],
         'route': <String, Object>{
           'default_domain_resolver': 'local-dns',

@@ -2,10 +2,10 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-import 'package:truetun/src/persistence/app_database.dart';
 import 'package:truetun/src/core/core_preferences.dart';
-import 'package:truetun/src/profiles/proxy_node.dart';
+import 'package:truetun/src/persistence/app_database.dart';
 import 'package:truetun/src/profiles/profile_group.dart';
+import 'package:truetun/src/profiles/proxy_node.dart';
 import 'package:truetun/src/profiles/vless_link_parser.dart';
 
 class ProfileRepository {
@@ -16,6 +16,19 @@ class ProfileRepository {
 
   final AppDatabase database;
   final FlutterSecureStorage secureStorage;
+
+  Future<void> saveProfileNode({
+    required String id,
+    required String groupId,
+    required ProxyNode node,
+  }) async {
+    switch (node) {
+      case VlessNode():
+        await saveVless(id: id, groupId: groupId, node: node);
+      case Hysteria2Node():
+        await saveHysteria2(id: id, groupId: groupId, node: node);
+    }
+  }
 
   Future<void> saveVless({
     required String id,
@@ -29,15 +42,7 @@ class ProfileRepository {
       'port': node.port,
       'flow': node.flow,
       'packetEncoding': node.packetEncoding,
-      'tls': {
-        'enabled': node.tls.enabled,
-        'serverName': node.tls.serverName,
-        'alpn': node.tls.alpn,
-        'insecure': node.tls.insecure,
-        'fingerprint': node.tls.fingerprint,
-        'realityPublicKey': node.tls.reality?.publicKey,
-        'realityShortId': node.tls.reality?.shortId,
-      },
+      'tls': _tlsToJson(node.tls),
       'transport': {
         'type': node.transport.type.name,
         'host': node.transport.host,
@@ -52,6 +57,50 @@ class ProfileRepository {
         id: id,
         name: node.name,
         protocol: ProxyProtocol.vless.name,
+        payload: payload,
+        secretKey: secretKey,
+        updatedAt: DateTime.now(),
+        groupId: Value(groupId),
+      ),
+    );
+  }
+
+  Future<void> saveHysteria2({
+    required String id,
+    required String groupId,
+    required Hysteria2Node node,
+  }) async {
+    final secretKey = 'profile.$id.hysteria2';
+    await secureStorage.write(
+      key: secretKey,
+      value: jsonEncode({
+        'password': node.password,
+        'obfsPassword': node.obfs?.password,
+      }),
+    );
+    final payload = jsonEncode({
+      'server': node.server,
+      'port': node.port,
+      'serverPorts': node.serverPorts,
+      'hopInterval': node.hopInterval,
+      'hopIntervalMax': node.hopIntervalMax,
+      'upMbps': node.upMbps,
+      'downMbps': node.downMbps,
+      'tls': _tlsToJson(node.tls),
+      'obfs': node.obfs == null
+          ? null
+          : {
+              'type': node.obfs!.type,
+              'minPacketSize': node.obfs!.minPacketSize,
+              'maxPacketSize': node.obfs!.maxPacketSize,
+            },
+      'extensions': node.extensions,
+    });
+    await database.saveProfile(
+      ProfilesCompanion.insert(
+        id: id,
+        name: node.name,
+        protocol: ProxyProtocol.hysteria2.name,
         payload: payload,
         secretKey: secretKey,
         updatedAt: DateTime.now(),
@@ -87,7 +136,7 @@ class ProfileRepository {
             ..where((row) => row.groupId.equals(group.id)))
           .go();
       for (final profile in group.profiles) {
-        await saveVless(
+        await saveProfileNode(
           id: profile.id,
           groupId: group.id,
           node: profile.node,
@@ -111,7 +160,7 @@ class ProfileRepository {
           in storedProfiles.where((row) => row.groupId == group.id)) {
         try {
           profiles.add(
-            ManagedProfile(id: profile.id, node: await loadVless(profile)),
+            ManagedProfile(id: profile.id, node: await loadProfile(profile)),
           );
         } on ProfileParseException {
           // Keep loading the rest when one secure-storage entry is missing.
@@ -134,7 +183,7 @@ class ProfileRepository {
 
   Future<void> deleteGroup(ProfileGroup group) async {
     for (final profile in group.profiles) {
-      await secureStorage.delete(key: 'profile.${profile.id}.uuid');
+      await secureStorage.delete(key: _secretKey(profile.id, profile.node));
     }
     final subscriptionKey = group.subscriptionUrl == null
         ? null
@@ -171,6 +220,16 @@ class ProfileRepository {
 
   Future<bool> loadMinimizeToTray() async =>
       await database.readSetting('minimize_to_tray') != 'false';
+
+  Future<ProxyNode> loadProfile(Profile profile) {
+    return switch (profile.protocol) {
+      'vless' => loadVless(profile),
+      'hysteria2' => loadHysteria2(profile),
+      _ => throw ProfileParseException(
+          'Unsupported stored protocol: ${profile.protocol}',
+        ),
+    };
+  }
 
   Future<VlessNode> loadVless(Profile profile) async {
     final uuid = await secureStorage.read(key: profile.secretKey);
@@ -212,5 +271,76 @@ class ProfileRepository {
         payload['extensions'] as Map<String, dynamic>? ?? const {},
       ),
     );
+  }
+
+  Future<Hysteria2Node> loadHysteria2(Profile profile) async {
+    final rawSecret = await secureStorage.read(key: profile.secretKey);
+    if (rawSecret == null) {
+      throw const ProfileParseException('Profile credentials are unavailable');
+    }
+    final secret = jsonDecode(rawSecret) as Map<String, dynamic>;
+    final password = secret['password'] as String?;
+    if (password == null || password.isEmpty) {
+      throw const ProfileParseException('Hysteria2 password is unavailable');
+    }
+
+    final payload = jsonDecode(profile.payload) as Map<String, dynamic>;
+    final tls = payload['tls'] as Map<String, dynamic>;
+    final rawObfs = payload['obfs'];
+    Hysteria2ObfsOptions? obfs;
+    if (rawObfs is Map<String, dynamic>) {
+      final obfsPassword = secret['obfsPassword'] as String?;
+      if (obfsPassword == null || obfsPassword.isEmpty) {
+        throw const ProfileParseException(
+          'Hysteria2 obfs password is unavailable',
+        );
+      }
+      obfs = Hysteria2ObfsOptions(
+        type: rawObfs['type'] as String,
+        password: obfsPassword,
+        minPacketSize: rawObfs['minPacketSize'] as int?,
+        maxPacketSize: rawObfs['maxPacketSize'] as int?,
+      );
+    }
+
+    return Hysteria2Node(
+      name: profile.name,
+      server: payload['server'] as String,
+      port: payload['port'] as int,
+      serverPorts:
+          (payload['serverPorts'] as List<dynamic>? ?? const []).cast<String>(),
+      password: password,
+      tls: TlsOptions(
+        enabled: tls['enabled'] as bool,
+        serverName: tls['serverName'] as String?,
+        alpn: (tls['alpn'] as List<dynamic>).cast<String>(),
+        insecure: tls['insecure'] as bool,
+      ),
+      hopInterval: payload['hopInterval'] as String?,
+      hopIntervalMax: payload['hopIntervalMax'] as String?,
+      upMbps: payload['upMbps'] as int?,
+      downMbps: payload['downMbps'] as int?,
+      obfs: obfs,
+      extensions: Map<String, String>.from(
+        payload['extensions'] as Map<String, dynamic>? ?? const {},
+      ),
+    );
+  }
+
+  Map<String, Object?> _tlsToJson(TlsOptions tls) => {
+        'enabled': tls.enabled,
+        'serverName': tls.serverName,
+        'alpn': tls.alpn,
+        'insecure': tls.insecure,
+        'fingerprint': tls.fingerprint,
+        'realityPublicKey': tls.reality?.publicKey,
+        'realityShortId': tls.reality?.shortId,
+      };
+
+  String _secretKey(String id, ProxyNode node) {
+    return switch (node) {
+      VlessNode() => 'profile.$id.uuid',
+      Hysteria2Node() => 'profile.$id.hysteria2',
+    };
   }
 }

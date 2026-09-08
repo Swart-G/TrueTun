@@ -15,7 +15,7 @@ TrueTun separates **import support**, **core capability** and **tested productio
 | P1 | VMess | Planned | Yes | Yes | Share link + subscription import |
 | P1 | Trojan | Planned | Yes | Yes | TLS + V2Ray transports where supported |
 | P1 | Shadowsocks | Planned | Yes | Yes | SIP002-style links first |
-| P1 | Hysteria2 | Planned | Yes | Yes | High priority modern UDP/QUIC option |
+| P1 | Hysteria2 | Implemented | Yes | Yes | URI + official YAML + sing-box JSON + Mihomo/Clash YAML; TLS pin/ECH inputs are rejected until they can be translated safely |
 | P1 | TUIC | Planned | Yes | Yes | QUIC-based |
 | P2 | SSH | Planned | Yes | Yes | Useful for simple deployments |
 | P2 | WireGuard | Planned | Yes | Extended options possible | Core support and platform behavior need testing |

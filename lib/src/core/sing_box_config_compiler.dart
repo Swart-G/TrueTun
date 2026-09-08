@@ -21,12 +21,13 @@ class SingBoxConfigCompiler {
   static const _outboundCompiler = SingBoxOutboundCompiler();
   static const _routingCompiler = SingBoxRoutingCompiler();
 
-  String compile(ConnectionSnapshot snapshot) => jsonEncode(compileMap(snapshot));
+  String compile(ConnectionSnapshot snapshot) =>
+      jsonEncode(compileMap(snapshot));
 
   Map<String, Object> compileMap(ConnectionSnapshot snapshot) {
     _validatePreferences(snapshot);
 
-    final proxy = _outboundCompiler.compileVless(snapshot.node, tag: 'proxy');
+    final proxy = _outboundCompiler.compile(snapshot.node, tag: 'proxy');
     // Keep proxy endpoint resolution outside the tunnel to prevent a
     // dependency loop when more than one DNS transport is configured.
     proxy['domain_resolver'] = 'dns-direct';
@@ -103,6 +104,11 @@ class SingBoxConfigCompiler {
         <String, Object>{'type': 'direct', 'tag': 'direct'},
       ],
       'route': route,
+      'experimental': <String, Object>{
+        'clash_api': <String, Object>{
+          'external_controller': '127.0.0.1:19090',
+        },
+      },
     };
   }
 
@@ -112,7 +118,8 @@ class SingBoxConfigCompiler {
       throw const ConfigCompileException('MTU must be between 1280 and 65535');
     }
     if (!const {'system', 'gvisor', 'mixed'}.contains(preferences.stack)) {
-      throw ConfigCompileException('Unsupported TUN stack: ${preferences.stack}');
+      throw ConfigCompileException(
+          'Unsupported TUN stack: ${preferences.stack}');
     }
     if (!const {'trace', 'debug', 'info', 'warn', 'error'}
         .contains(preferences.logLevel)) {
