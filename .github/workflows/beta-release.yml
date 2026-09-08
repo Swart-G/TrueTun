@@ -1,0 +1,86 @@
+name: Android Beta Release
+
+on:
+  push:
+    branches:
+      - feat/android-native-vpn-runtime
+    paths:
+      - .github/workflows/beta-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Verify Dart sources
+        run: |
+          dart format lib test
+          flutter analyze
+          flutter test
+
+      - name: Build Android debug APK
+        run: flutter build apk --debug
+
+      - name: Prepare beta assets
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-debug.apk dist/TrueTun-android-v0.4.0-beta.1.apk
+          cd dist
+          sha256sum TrueTun-android-v0.4.0-beta.1.apk > SHA256SUMS.txt
+
+      - name: Create GitHub beta prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## TrueTun 0.4.0 Beta 1
+
+          First Android beta with the native VPN runtime enabled.
+
+          ### Android
+          - Embedded sing-box/libbox 1.14.0 runtime.
+          - Real Android `VpnService` with TUN traffic instead of the previous preview-only shell.
+          - Foreground VPN service lifecycle and disconnect notification action.
+          - `VpnService.protect(fd)` integration to prevent proxy-core traffic from looping back into the VPN.
+          - Native Flutter bridge for connection state, traffic events, diagnostics and installed applications.
+          - Android application whitelist/blacklist routing and smart app selection.
+          - Ordered routing rules with proxy/direct/block actions.
+          - VLESS/Reality and Hysteria2 profile support in the current importer/compiler path.
+          - Subscription management and Android-specific DNS/routing configuration.
+          - Native traffic counters without a localhost Clash API.
+
+          ### Verification
+          - `flutter analyze` passes.
+          - 36 automated tests pass.
+          - Android debug APK compiles successfully against the pinned libbox API.
+
+          ### Beta warning
+          This is a prerelease/debug build intended for device testing. Physical-device validation of long sessions, network switching, Always-on VPN, leak behaviour and all supported transports is still in progress. It is not yet the production release.
+
+          The APK is debug-signed. SHA-256 is provided in `SHA256SUMS.txt`.
+          EOF
+
+          gh release create v0.4.0-beta.1 \
+            dist/TrueTun-android-v0.4.0-beta.1.apk \
+            dist/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" \
+            --title "TrueTun 0.4.0 Beta 1" \
+            --notes-file release-notes.md \
+            --prerelease
