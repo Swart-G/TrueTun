@@ -52,6 +52,10 @@ class MainActivity : FlutterActivity() {
                         )
                         result.success(true)
                     }
+                    "openVpnSettings" -> {
+                        startActivity(Intent(Settings.ACTION_VPN_SETTINGS))
+                        result.success(true)
+                    }
                     "getState" -> result.success(TrueTunRuntime.snapshot())
                     "getCapabilities" -> result.success(
                         mapOf(
