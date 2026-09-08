@@ -1,0 +1,111 @@
+name: Publish TrueTun v0.3.0
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/release-v0.3.0.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libsecret-1-dev \
+            libayatana-appindicator3-dev
+
+      - name: Resolve dependencies and validate
+        run: |
+          flutter pub get
+          dart format --output=none --set-exit-if-changed lib test
+          flutter analyze
+          flutter test
+
+      - name: Build Android release APK
+        run: flutter build apk --release
+
+      - name: Build Linux bundle with extended sing-box
+        run: bash tool/package_linux_test.sh
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            dist/TrueTun-android-v0.3.0-preview.apk
+          tar -C build/linux/x64/debug -czf \
+            dist/TrueTun-linux-x86_64-v0.3.0.tar.gz bundle
+          (
+            cd dist
+            sha256sum TrueTun-android-v0.3.0-preview.apk \
+              TrueTun-linux-x86_64-v0.3.0.tar.gz > SHA256SUMS.txt
+          )
+
+      - name: Write release notes
+        shell: bash
+        run: |
+          cat > RELEASE_NOTES.md <<'EOF'
+          ## TrueTun 0.3.0
+
+          ### Main changes
+
+          - Added Hysteria2 profile support for `hysteria2://` / `hy2://` links, official Hysteria2 YAML, sing-box JSON and Mihomo/Clash-style Hysteria2 entries.
+          - Added Hysteria2 persistence, subscription import and sing-box outbound generation.
+          - Restored Linux live traffic counters and graphs through the sing-box Clash API on `127.0.0.1:19090`.
+          - Fixed Android subscription downloads in release builds.
+          - Hardened Android configuration: no Clash API, localhost controller, temporary loopback proxy or other local listening socket is emitted by the shared configuration/diagnostics layer.
+          - Added regression tests for the Android no-loopback policy and Hysteria2 import/compilation/persistence.
+
+          ### Linux
+
+          The x86_64 bundle includes the extended sing-box core and the TrueTun launcher/helper. Extract the archive and run `./bundle/truetun`.
+
+          ### Android preview
+
+          The APK contains the updated UI, profile/subscription management and Hysteria2 import support. Native Android `VpnService` / mobile core integration is still under development, so device-wide tunnelling is not enabled in this preview. The APK is signed with the project test key.
+
+          Android is intentionally designed without a localhost HTTP/controller API; future mobile traffic statistics must be delivered directly through the native core bridge.
+
+          ### Protocol note
+
+          This release implements Hysteria2. Legacy Hysteria v1 (`hysteria://`) is not implemented.
+
+          SHA-256 checksums are attached in `SHA256SUMS.txt`.
+          EOF
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v0.3.0 \
+            dist/TrueTun-android-v0.3.0-preview.apk \
+            dist/TrueTun-linux-x86_64-v0.3.0.tar.gz \
+            dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "TrueTun 0.3.0" \
+            --notes-file RELEASE_NOTES.md \
+            --latest
