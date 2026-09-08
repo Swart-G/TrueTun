@@ -1,11 +1,9 @@
 package app.truetun.vpn
 
 import android.content.Context
-import android.os.Build
 import app.truetun.BuildConfig
 import io.nekohasekai.libbox.Libbox
 import io.nekohasekai.libbox.SetupOptions
-import org.json.JSONObject
 import java.util.Locale
 
 object LibboxRuntime {
@@ -34,12 +32,6 @@ object LibboxRuntime {
             it.crashReportSource = "TrueTun"
             it.appVersion = BuildConfig.VERSION_CODE.toString()
             it.appMarketingVersion = BuildConfig.VERSION_NAME
-            it.platformMetadata = JSONObject()
-                .put("os", "Android ${Build.VERSION.RELEASE}")
-                .put("sdk", Build.VERSION.SDK_INT)
-                .put("manufacturer", Build.MANUFACTURER)
-                .put("model", Build.MODEL)
-                .toString()
         }
         Libbox.setup(options)
         initialized = true
