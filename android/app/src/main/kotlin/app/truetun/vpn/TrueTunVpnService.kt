@@ -196,7 +196,7 @@ class TrueTunVpnService : VpnService(), CommandServerHandler {
                     "Connected • ↓ ${formatRate(downloadRate)}  ↑ ${formatRate(uploadRate)}",
                 )
             }
-        }, 0, 500, TimeUnit.MILLISECONDS)
+        }, 0, 1000, TimeUnit.MILLISECONDS)
     }
 
     private fun stopMetrics() {
