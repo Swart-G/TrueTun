@@ -9,6 +9,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -18,3 +23,5 @@ jobs:
         run: dart format lib test
       - run: flutter analyze
       - run: flutter test
+      - name: Build Android debug APK
+        run: flutter build apk --debug
