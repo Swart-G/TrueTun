@@ -2,7 +2,6 @@ package app.truetun.vpn
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.IpPrefix
 import android.net.Network
@@ -14,8 +13,6 @@ import android.os.Looper
 import android.os.Process
 import android.system.OsConstants
 import android.util.Log
-import io.nekohasekai.libbox.AutoRedirectHandler
-import io.nekohasekai.libbox.AutoRedirectSession
 import io.nekohasekai.libbox.BridgeOptions
 import io.nekohasekai.libbox.BridgeSession
 import io.nekohasekai.libbox.ConnectionOwner
@@ -305,13 +302,6 @@ class TrueTunPlatformInterface(
 
     override fun createBridge(options: BridgeOptions?): BridgeSession =
         error("android: platform bridge is disabled")
-
-    override fun usePlatformAutoRedirect(): Boolean = false
-
-    override fun createAutoRedirect(
-        options: ByteArray?,
-        handler: AutoRedirectHandler?,
-    ): AutoRedirectSession = error("android: auto redirect is disabled")
 
     fun close() {
         defaultNetworkMonitor.close()
