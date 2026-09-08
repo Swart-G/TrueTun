@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:truetun/src/android_mobile_app.dart';
+import 'package:truetun/src/android_mobile_app_v2.dart';
 import 'package:truetun/src/application/app_state.dart';
 
 void main() {
