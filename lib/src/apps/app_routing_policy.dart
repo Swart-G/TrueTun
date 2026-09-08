@@ -15,11 +15,6 @@ class AppRoutingPolicy {
   final AppRoutingMode mode;
   final Set<String> selectedPackageNames;
 
-  /// Payload for the native Android VpnService layer.
-  ///
-  /// Production Android should apply this with VpnService.Builder
-  /// addAllowedApplication/addDisallowedApplication. This decides which apps
-  /// enter the VPN before traffic reaches the proxy core.
   Map<String, Object> toAndroidVpnPolicy({required String ownPackageName}) {
     final selected = _normalizedPackages(ownPackageName);
 
@@ -27,31 +22,31 @@ class AppRoutingPolicy {
       case AppRoutingMode.proxyAllExceptSelected:
         return {
           'mode': 'exclude',
-          'packages': <String>{...selected, ownPackageName}.toList()..sort(),
+          'packages': selected.toList()..sort(),
         };
       case AppRoutingMode.proxyOnlySelected:
         return {
           'mode': 'include',
-          'packages': selected.toList()..sort(),
+          'packages': <String>{...selected, ownPackageName}.toList()..sort(),
         };
     }
   }
 
-  /// Equivalent sing-box TUN patch for cores/platform bindings that support
-  /// package filtering internally. Native VpnService filtering is preferred
-  /// on Android; this method keeps the domain layer backend-neutral.
+  /// sing-box mobile bindings expose the same package filters in TunOptions.
+  /// TrueTun itself must enter the TUN so its connection diagnostics test the
+  /// real VPN. Core sockets are exempted separately with VpnService.protect().
   Map<String, Object> toAndroidTunPatch({required String ownPackageName}) {
     final selected = _normalizedPackages(ownPackageName);
 
     switch (mode) {
       case AppRoutingMode.proxyAllExceptSelected:
         return {
-          'exclude_package': <String>{...selected, ownPackageName}.toList()
-            ..sort(),
+          'exclude_package': selected.toList()..sort(),
         };
       case AppRoutingMode.proxyOnlySelected:
         return {
-          'include_package': selected.toList()..sort(),
+          'include_package': <String>{...selected, ownPackageName}.toList()
+            ..sort(),
         };
     }
   }
@@ -82,12 +77,14 @@ class InstalledAppDescriptor {
     required this.label,
     required this.category,
     required this.isSystem,
+    this.uid,
   });
 
   final String packageName;
   final String label;
   final AppCategory category;
   final bool isSystem;
+  final int? uid;
 }
 
 enum AppRoutingRecommendation {
@@ -110,11 +107,6 @@ class AppRoutingSuggestion {
   final String reason;
 }
 
-/// Privacy-preserving baseline for the future smart app selector.
-///
-/// It intentionally uses only local metadata. Later versions can enrich this
-/// with user-confirmed regional presets, connection failures and local usage
-/// history, while keeping the decision explainable in the UI.
 class SmartAppSuggestionEngine {
   const SmartAppSuggestionEngine();
 
@@ -125,9 +117,9 @@ class SmartAppSuggestionEngine {
     if (app.packageName == ownPackageName) {
       return AppRoutingSuggestion(
         app: app,
-        recommendation: AppRoutingRecommendation.bypass,
+        recommendation: AppRoutingRecommendation.proxy,
         confidence: 1,
-        reason: 'TrueTun itself should not be routed back into its VPN.',
+        reason: 'TrueTun diagnostics must enter the VPN; core sockets bypass it with protect().',
       );
     }
 
@@ -158,8 +150,7 @@ class SmartAppSuggestionEngine {
         app: app,
         recommendation: AppRoutingRecommendation.proxy,
         confidence: 0.65,
-        reason:
-            'This category commonly benefits from the selected proxy route.',
+        reason: 'This category commonly benefits from the selected proxy route.',
       );
     }
 
