@@ -1317,8 +1317,7 @@ class _ProfileGroupCardState extends State<_ProfileGroupCard> {
                             ),
                             title: Text(profile.node.name),
                             subtitle: Text(
-                              '${profile.node.server}:${profile.node.port} · ' +
-                                  _profileTypeLabel(profile.node),
+                              '${profile.node.server}:${profile.node.port} · ${_profileTypeLabel(profile.node)}',
                             ),
                             trailing: Row(
                               mainAxisSize: MainAxisSize.min,

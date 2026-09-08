@@ -194,6 +194,11 @@ class AppController extends StateNotifier<AppState> {
     }
   }
 
+  @Deprecated('Use importProfile for protocol-neutral imports')
+  void importVless(String link, {String targetGroupId = 'manual'}) {
+    importProfile(link, targetGroupId: targetGroupId);
+  }
+
   void createGroup(String name) {
     final normalized = name.trim();
     if (normalized.isEmpty) return;
