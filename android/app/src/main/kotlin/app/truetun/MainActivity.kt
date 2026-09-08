@@ -59,8 +59,9 @@ class MainActivity : FlutterActivity() {
                     "getState" -> result.success(TrueTunRuntime.snapshot())
                     "getCapabilities" -> result.success(
                         mapOf(
-                            "name" to "sing-box libbox",
+                            "name" to "sing-box-lx libbox",
                             "version" to LibboxRuntime.version(this),
+                            "variant" to BuildConfig.LIBBOX_VARIANT,
                             "protocols" to listOf(
                                 "vless",
                                 "vmess",
@@ -78,6 +79,7 @@ class MainActivity : FlutterActivity() {
                                 "urltest",
                                 "android-app-routing",
                                 "native-metrics",
+                                "xhttp",
                             ),
                         ),
                     )
@@ -109,6 +111,8 @@ class MainActivity : FlutterActivity() {
                         mapOf(
                             "appVersion" to BuildConfig.VERSION_NAME,
                             "coreVersion" to LibboxRuntime.version(this),
+                            "coreVariant" to BuildConfig.LIBBOX_VARIANT,
+                            "xhttp" to true,
                             "androidVersion" to Build.VERSION.RELEASE,
                             "sdk" to Build.VERSION.SDK_INT,
                             "manufacturer" to Build.MANUFACTURER,
