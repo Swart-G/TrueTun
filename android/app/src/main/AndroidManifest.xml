@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Required by the production APK for subscription downloads and other network access. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+
     <application
         android:label="TrueTun"
         android:name="${applicationName}"
