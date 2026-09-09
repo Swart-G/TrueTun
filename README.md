@@ -2,75 +2,122 @@
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-TrueTun is a cross-platform proxy client for **Android** and **Linux**.
+TrueTun is a cross-platform TUN proxy client for **Android** and **Linux**. The Flutter application owns profiles, subscriptions, routing and persistence; platform adapters own the actual VPN/TUN runtime.
 
-The project follows the architecture that makes Hiddify stable in practice: the UI and product logic are independent from the proxy core. TrueTun uses an adapter around a sing-box-compatible core instead of coupling profiles, routing and UI directly to one binary/fork.
+## TrueTun 0.4.0
 
-## Product goals
+The first combined Android + Linux release provides real traffic forwarding on both targets.
 
-- Stable TUN-based proxying on Android and Linux.
-- VLESS first-class support, including Reality and modern transports.
-- Broad protocol support through a sing-box-compatible core: VLESS, VMess, Trojan, Shadowsocks, Hysteria2, TUIC, SSH, WireGuard and others supported by the selected core build.
-- Import both single share links and remote subscriptions.
-- Subscription formats: plain/base64 share-link lists, sing-box JSON, Clash/Mihomo YAML and panel-generated subscription URLs.
-- Ordered routing rules inspired by Mihomo: domain, suffix, keyword, regex, IP/CIDR, port, protocol, rule-set, Android package and Linux process rules.
-- Routing targets: proxy/group, direct and block.
-- Android per-app routing with both modes:
-  - **Proxy all except selected apps** (blacklist/bypass list).
-  - **Proxy only selected apps** (whitelist/include list).
-- Local smart app suggestions for per-app routing without sending the installed-app list to a server.
-- Profiles, proxy groups, latency testing, automatic node selection and failover.
-- No dependency of UI/domain logic on a specific core implementation.
+### Android
+
+- Native Android `VpnService` with a real TUN interface.
+- Foreground service lifecycle and Disconnect notification action.
+- `VpnService.protect()` integration so proxy-core sockets do not loop back into the VPN.
+- Physical-network monitoring and interface auto-detection.
+- Pinned `sing-box-lx 1.14.0-lx.35` libbox runtime with XHTTP support.
+- VLESS with TLS/Reality and TCP, HTTP, WebSocket, gRPC, HTTPUpgrade, QUIC and XHTTP transport compilation.
+- Hysteria2 URI/YAML/Mihomo import and connection path.
+- Single-profile import and remote subscriptions.
+- Ordered proxy/direct/block routing rules.
+- Application whitelist and blacklist routing through Android TUN package filters.
+- Local smart app-routing suggestions.
+- Live traffic counters, connection test, logs and native diagnostics.
+- Optimized traffic graph/state subscriptions and regression coverage for dialog lifecycle failures found during beta device testing.
+
+### Linux
+
+- Release-mode Flutter desktop application with system tray and per-user autostart.
+- Pinned `sing-box-lx 1.14.0-lx.35` executable from the same XHTTP-capable core family used on Android.
+- Unprivileged GUI with a narrowly scoped root-owned helper for TUN/core startup.
+- VLESS/Reality/XHTTP and Hysteria2 through the normalized TrueTun profile path.
+- Profiles, subscriptions, persistence, connection testing, logs and live traffic statistics.
+- Full ordered routing editor for domains, IP/CIDR, ports, protocol/network and Linux process matching.
+- Dedicated process-routing page for process name, exact executable path or path regex with proxy/direct/block actions.
+- Desktop-menu installer and cleanup helper in the release archive.
+
+## Protocol support
+
+TrueTun distinguishes **core capability** from **implemented import support**. Version 0.4.0 has first-class profile parsing/compilation for:
+
+- **VLESS**, including Reality and XHTTP.
+- **Hysteria2**.
+
+The bundled sing-box-lx core supports additional protocols, but TrueTun does not yet claim full UI/share-link import support for VMess, Trojan, Shadowsocks, TUIC, SSH or WireGuard. See `docs/PROTOCOLS.md` for the support matrix.
 
 ## Architecture
 
 ```text
 Flutter UI
    |
-Application services
-   |-- Profiles / subscriptions
-   |-- Routing rules
-   |-- App routing policy
-   |-- Proxy groups / health
-   |-- Settings / persistence
+Application state / persistence
+   |-- Profiles and subscriptions
+   |-- Ordered routing rules
+   |-- Android application policy
+   |-- Linux process rules
+   |-- Settings and diagnostics
    |
-Core configuration compiler
+Core-neutral configuration compiler
    |
 ProxyCoreAdapter
-   |-- Native/mobile core adapter (Android)
-   |-- sing-box process adapter (Linux)
-   `-- optional extended-core adapter
+   |-- Android native libbox + VpnService
+   `-- Linux sing-box-lx process + privileged helper
 ```
 
-The internal routing model is deliberately core-neutral. UI rules are compiled to the target core configuration only at connection time.
+Rules are stored independently of the core and compiled when a connection starts. Platform-specific matchers are rejected on incompatible targets instead of silently becoming match-all rules.
 
-## Repository status
+## Installation
 
-This first foundation contains:
+### Android
 
-- Flutter Material 3 application shell with adaptive Android/Linux navigation.
-- Core lifecycle abstraction and process-based sing-box runner for Linux development.
-- Core-neutral routing model and sing-box route-rule compiler.
-- Android native VPN allow/deny policy model plus compatible core TUN package filtering.
-- Local explainable smart-app suggestion baseline.
-- Profile input detection for share links, subscription URLs, sing-box JSON and Clash/Mihomo YAML.
-- Typed VLESS parser with TLS, Reality, uTLS fingerprint, WebSocket, gRPC, HTTPUpgrade and XHTTP import preservation.
-- Hysteria2 import from `hysteria2://` / `hy2://`, official client YAML, sing-box JSON, and Mihomo/Clash YAML, with sing-box outbound compilation and persistence.
-- Stable-backend VLESS -> sing-box outbound compiler. XHTTP remains capability-gated for an extended backend rather than being silently miscompiled.
-- Architecture, routing, protocol and implementation-roadmap documentation.
-- Unit tests and GitHub Actions CI for format/analyze/tests.
+Download `TrueTun-android-v0.4.0.apk` from the GitHub `v0.4.0` release and install it. Android will request VPN permission on the first connection.
 
-The Linux client is usable with the packaged extended core, persistent profiles,
-subscriptions, diagnostics, traffic statistics, tray mode, and autostart. The
-Android APK currently provides the application UI and persistent profile
-management; native `VpnService`/mobile-core integration is still required before
-Android can carry device traffic.
+GitHub source releases fall back to the project test signing key when production signing secrets are not configured. The Gradle build supports a production keystore through `TRUETUN_KEYSTORE_PATH`, `TRUETUN_KEYSTORE_PASSWORD`, `TRUETUN_KEY_ALIAS` and `TRUETUN_KEY_PASSWORD`.
 
-## Core strategy
+### Linux x86_64
 
-The default production target should be a **sing-box-compatible core**. Upstream sing-box is the conservative baseline. An extended build can be supplied through the same adapter for features not available upstream, such as XHTTP or Amnezia-specific functionality.
+Download and unpack `TrueTun-linux-x86_64-v0.4.0.tar.gz`, then run:
 
-Do not import Hiddify application code into TrueTun. Reusing the architecture is enough and keeps the project independent.
+```bash
+./truetun
+```
+
+On the first launch after installation/core update, PolicyKit asks for authentication once. TrueTun installs the verified core and a narrow helper under `/usr/local/libexec/truetun`; the Flutter GUI itself continues to run as the normal desktop user.
+
+Optional application-menu integration:
+
+```bash
+./install-desktop.sh
+```
+
+Cleanup of desktop/autostart integration and the privileged helper:
+
+```bash
+./uninstall.sh
+```
+
+Typical runtime/build dependencies are GTK 3, libstdc++, libsecret, PolicyKit/pkexec, sudo/visudo and the normal Flutter Linux runtime libraries.
+
+## Building from source
+
+Install Flutter with Android and/or Linux desktop toolchains, then:
+
+```bash
+flutter pub get
+flutter analyze
+flutter test
+```
+
+Linux self-contained release packaging:
+
+```bash
+TRUETUN_VERSION=0.4.0 bash tool/package_linux_release.sh
+```
+
+The release packager downloads an exact sing-box-lx archive and verifies its SHA-256 before embedding it. Android Gradle does the same for the exact libbox AAR.
+
+## Security and third-party source
+
+TrueTun project code is licensed under Apache-2.0. Distributed sing-box/sing-box-lx components are GPL-3.0-or-later and retain their own obligations. Stable GitHub releases attach the corresponding sing-box-lx source archive together with `THIRD_PARTY_NOTICES.md` and `SHA256SUMS.txt`.
 
 See:
 
@@ -79,40 +126,10 @@ See:
 - `docs/PROTOCOLS.md`
 - `docs/ROADMAP.md`
 - `docs/LICENSING.md`
+- `THIRD_PARTY_NOTICES.md`
 
-## Development bootstrap
+## Validation scope
 
-Install Flutter with Android and Linux desktop toolchains, then from the repository root run:
+CI analyzes/tests the Flutter code, builds Android, builds a self-contained Linux release bundle and smoke-checks the Linux executable/core packaging. Android beta device testing has already exercised the real VPN path and Hysteria2 and exposed/fixed a Flutter dialog lifecycle bug and UI performance problems.
 
-```bash
-flutter pub get
-flutter analyze
-flutter test
-```
-
-The same dependency and validation commands are available through `tool/bootstrap.sh`.
-
-## Linux test build
-
-Create a self-contained debug bundle with the pinned sing-box core:
-
-```bash
-FLUTTER_BIN=/path/to/flutter/bin/flutter tool/package_linux_test.sh
-build/linux/x64/debug/bundle/truetun
-```
-
-The `truetun` launcher asks for administrator authentication once. It installs
-a root-owned core and a narrow helper with a `sudoers` rule limited to core
-configuration validation and startup. Connections use non-interactive sudo, so
-TUN routing and systemd-resolved setup do not request a second password. The
-Flutter UI itself remains unprivileged. The Home page runs an HTTPS connection
-test, displays its latency and reads traffic counters from the core. Core output
-and connection-test results are available on the Logs page.
-
-Closing the Linux window keeps TrueTun running in the system tray. The Settings
-page controls per-user autostart, background operation, TUN stack, MTU, strict
-routing, IPv6, DNS servers, and the core log level.
-
-## Project direction
-
-The first usable milestone is intentionally narrow: import a VLESS link/subscription, select a node, connect through TUN, create ordered routing rules, and configure Android app include/exclude routing. Everything else builds on top of that path.
+Network behavior still depends on the Android vendor kernel, Linux distribution, local firewall, DNS and network policy. Reproducible runtime failures should include the TrueTun Logs/diagnostic output and the exact profile transport involved.
