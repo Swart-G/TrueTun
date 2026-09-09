@@ -1,90 +1,87 @@
-# Protocol support plan
+# Protocol support
 
-TrueTun separates **import support**, **core capability** and **tested production support**. A protocol appearing in a core build does not automatically mean the UI should claim it as supported.
+TrueTun separates **import support**, **core capability** and **platform validation**. A protocol existing in the bundled core does not automatically mean the application can import and manage it.
 
-## Priority matrix
+## TrueTun 0.4.0 matrix
 
-| Priority | Protocol / transport | Import | Stable backend | Extended backend | Notes |
-|---|---|---:|---:|---:|---|
-| P0 | VLESS TCP | In progress | Yes | Yes | First end-to-end path |
-| P0 | VLESS Reality | In progress | Yes | Yes | First-class support |
-| P0 | VLESS WebSocket | In progress | Yes | Yes | CDN-friendly legacy/common path |
-| P0 | VLESS gRPC | In progress | Yes | Yes | Requires compatible core build |
-| P0 | VLESS HTTPUpgrade | In progress | Yes | Yes | Supported by sing-box V2Ray transport |
-| P0 | VLESS XHTTP | Preserve import | No | Planned | Must be capability-gated and integration-tested |
-| P1 | VMess | Planned | Yes | Yes | Share link + subscription import |
-| P1 | Trojan | Planned | Yes | Yes | TLS + V2Ray transports where supported |
-| P1 | Shadowsocks | Planned | Yes | Yes | SIP002-style links first |
-| P1 | Hysteria2 | Implemented | Yes | Yes | URI + official YAML + sing-box JSON + Mihomo/Clash YAML; TLS pin/ECH inputs are rejected until they can be translated safely |
-| P1 | TUIC | Planned | Yes | Yes | QUIC-based |
-| P2 | SSH | Planned | Yes | Yes | Useful for simple deployments |
-| P2 | WireGuard | Planned | Yes | Extended options possible | Core support and platform behavior need testing |
-| P2 | AnyTLS | Planned | Core-dependent | Core-dependent | Expose only when capability reports it |
-| P3 | NaiveProxy | Planned | Build/platform-dependent | Build/platform-dependent | Optional backend feature |
-| P3 | Amnezia variants | Planned | No | Planned | Extended backend only |
+| Protocol / transport | Import/model | Config compiler | Android core | Linux core | Status |
+|---|---:|---:|---:|---:|---|
+| VLESS TCP | Yes | Yes | Yes | Yes | Supported path |
+| VLESS Reality | Yes | Yes | Yes | Yes | Supported path |
+| VLESS WebSocket | Yes | Yes | Yes | Yes | Supported path |
+| VLESS gRPC | Yes | Yes | Yes | Yes | Supported path |
+| VLESS HTTPUpgrade | Yes | Yes | Yes | Yes | Supported path |
+| VLESS QUIC transport | Yes | Yes | Core-supported | Core-supported | Experimental |
+| VLESS XHTTP | Yes | Yes | `sing-box-lx 1.14.0-lx.35` | `sing-box-lx 1.14.0-lx.35` | Experimental / device validation ongoing |
+| Hysteria2 | Yes | Yes | Yes | Yes | Supported path; Android device test confirmed basic connection |
+| VMess | Planned | Planned | Core-capable | Core-capable | Not claimed by UI |
+| Trojan | Planned | Planned | Core-capable | Core-capable | Not claimed by UI |
+| Shadowsocks | Planned | Planned | Core-capable | Core-capable | Not claimed by UI |
+| TUIC | Planned | Planned | Core-capable | Core-capable | Not claimed by UI |
+| SSH | Planned | Planned | Core-capable | Core-capable | Not claimed by UI |
+| WireGuard | Planned | Planned | Core-capable | Core-capable | Not claimed by UI |
+| AnyTLS / Amnezia variants | Planned | Planned | Build-dependent | Build-dependent | Not claimed |
 
 ## Support states
 
-Every importer/backend pair should expose one of:
+- `unsupported` — TrueTun cannot represent the profile/backend combination.
+- `importOnly` — the profile can be preserved/displayed but not connected with the active backend.
+- `experimental` — a connection path exists and passes config/build tests but still needs broader platform/network validation.
+- `supported` — implemented in the TrueTun model/compiler and covered by the relevant integration path.
 
-- `unsupported` — parser/core cannot represent it.
-- `importOnly` — TrueTun can preserve/display the profile but cannot connect with the current backend.
-- `experimental` — connect path exists but is not yet part of the stable compatibility promise.
-- `supported` — covered by config tests and platform integration tests.
+## VLESS fields
 
-This prevents the common failure mode where a link imports successfully but breaks only after the user presses Connect.
-
-## VLESS import fields
-
-The typed VLESS model should preserve:
+The VLESS model currently preserves and compiles:
 
 - UUID
-- server / port
-- flow (`xtls-rprx-vision`)
+- server and port
+- flow
 - packet encoding
 - TLS state
 - SNI
 - ALPN
 - insecure flag
-- uTLS fingerprint when provided
-- Reality public key / short ID
+- uTLS fingerprint
+- Reality public key and short ID
 - transport type
 - WebSocket host/path
 - gRPC service name
 - HTTP/HTTPUpgrade host/path
-- XHTTP mode/host/path and future extended parameters
+- XHTTP mode/host/path
+- unknown query parameters in an extension map
 
-Unknown query parameters should eventually be retained in an extension map so future versions can re-import/export profiles without losing information.
+## XHTTP backend
 
-## Backend policy
+Both release platforms use the pinned XHTTP-capable `Leadaxe/sing-box-lx 1.14.0-lx.35` core family:
 
-### Stable
+- Android: `libbox-1.14.0-lx.35.aar`.
+- Linux: architecture-specific `sing-box-1.14.0-lx.35-linux-*` executable.
 
-Use a pinned stable sing-box-compatible build and support only features validated against that version.
+XHTTP configuration emits `transport.type = xhttp`, carries the imported `mode`, `host` and `path`, and defaults omitted mode to the core's `auto` behavior. The runtime fork supports packet-up, stream-up and stream-one modes; interoperability still depends on the target Xray/sing-box-extended server and reverse-proxy/CDN configuration.
 
-### Extended
+## Hysteria2
 
-Use a separately identified build for capabilities not available in the stable backend, such as XHTTP or Amnezia-specific functionality. The extended backend must have its own compatibility tests and version pin.
+TrueTun imports Hysteria2 from:
 
-The user can later choose a release channel such as:
+- `hysteria2://` and `hy2://` links
+- official client YAML
+- sing-box JSON where handled by the subscription pipeline
+- Mihomo/Clash YAML proxy entries
 
-- Stable core
-- Extended core
+The model supports TLS configuration, port hopping, bandwidth hints and supported obfuscation fields. Inputs that cannot currently be translated without weakening security are rejected rather than ignored.
 
-Profiles remain the same domain objects. The backend capability check decides whether Connect is allowed.
+## Compatibility validation
 
-## Compatibility tests
-
-For each claimed protocol/transport, test at minimum:
+For every protocol/transport promoted to stable support, the intended validation set is:
 
 1. Parser fixture -> normalized node.
 2. Normalized node -> generated core JSON.
-3. Core `check` accepts generated JSON.
-4. TCP download/upload.
-5. UDP where the protocol claims it.
-6. DNS through TUN.
-7. reconnect after network change.
-8. large bidirectional transfer, not only latency/ping.
+3. Pinned core `check` accepts the generated JSON.
+4. DNS through TUN.
+5. TCP upload/download.
+6. UDP where applicable.
+7. reconnect after network changes.
+8. large bidirectional transfer.
 9. Android and Linux separately.
 
-XHTTP specifically needs upload/download tests with explicit mode handling because a config can appear connected while persistent/bidirectional traffic is broken.
+XHTTP additionally needs explicit upload/download testing per mode because a transport can establish an HTTP session while one direction remains unusable.
