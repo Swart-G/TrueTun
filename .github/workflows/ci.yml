@@ -55,7 +55,7 @@ jobs:
           cache: true
       - run: flutter pub get
       - name: Build self-contained Linux release bundle
-        run: TRUETUN_VERSION=ci tool/package_linux_release.sh
+        run: TRUETUN_VERSION=ci bash tool/package_linux_release.sh
       - name: Verify Linux release contents
         run: |
           test -x dist/TrueTun-linux-x86_64-vci/truetun
