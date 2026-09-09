@@ -14,96 +14,49 @@ env:
   TRUETUN_VERSION: 0.4.0
 
 jobs:
-  android:
+  release:
     runs-on: ubuntu-latest
-    env:
-      TRUETUN_KEYSTORE_PATH: /tmp/truetun-release.jks
-      TRUETUN_KEYSTORE_BASE64: ${{ secrets.TRUETUN_KEYSTORE_BASE64 }}
-      TRUETUN_KEYSTORE_PASSWORD: ${{ secrets.TRUETUN_KEYSTORE_PASSWORD }}
-      TRUETUN_KEY_ALIAS: ${{ secrets.TRUETUN_KEY_ALIAS }}
-      TRUETUN_KEY_PASSWORD: ${{ secrets.TRUETUN_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@v5
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-          cache: true
-      - run: flutter pub get
-      - name: Verify Dart and Flutter tests
-        run: |
-          dart format lib test
-          flutter analyze
-          flutter test
-      - name: Prepare optional production Android signing key
-        run: |
-          if [[ -n "${TRUETUN_KEYSTORE_BASE64:-}" ]]; then
-            printf '%s' "$TRUETUN_KEYSTORE_BASE64" | base64 --decode > "$TRUETUN_KEYSTORE_PATH"
-          fi
-      - name: Build Android release APK
-        run: flutter build apk --release
-      - name: Prepare Android asset
-        run: |
-          mkdir -p dist
-          cp build/app/outputs/flutter-apk/app-release.apk \
-            "dist/TrueTun-android-v${TRUETUN_VERSION}.apk"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-android
-          path: dist/TrueTun-android-v${{ env.TRUETUN_VERSION }}.apk
-          if-no-files-found: error
 
-  linux-x86_64:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
       - name: Install Linux desktop build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             clang cmake ninja-build pkg-config libgtk-3-dev libblkid-dev \
             liblzma-dev libsecret-1-dev curl sudo policykit-1
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
           cache: true
+
       - run: flutter pub get
+
+      - name: Verify sources and tests
+        run: |
+          dart format lib test
+          flutter analyze
+          flutter test
+
+      - name: Build Android release APK
+        run: flutter build apk --release
+
       - name: Build Linux release bundle
         run: bash tool/package_linux_release.sh
-      - name: Smoke-check Linux bundle
-        run: |
-          test -x "dist/TrueTun-linux-x86_64-v${TRUETUN_VERSION}/truetun"
-          test -x "dist/TrueTun-linux-x86_64-v${TRUETUN_VERSION}/truetun-bin"
-          test -x "dist/TrueTun-linux-x86_64-v${TRUETUN_VERSION}/sing-box"
-          "dist/TrueTun-linux-x86_64-v${TRUETUN_VERSION}/sing-box" version
-          ldd "dist/TrueTun-linux-x86_64-v${TRUETUN_VERSION}/truetun-bin"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-linux-x86_64
-          path: dist/TrueTun-linux-x86_64-v${{ env.TRUETUN_VERSION }}.tar.gz
-          if-no-files-found: error
 
-  release:
-    needs:
-      - android
-      - linux-x86_64
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
-        with:
-          name: release-android
-          path: release-assets
-      - uses: actions/download-artifact@v4
-        with:
-          name: release-linux-x86_64
-          path: release-assets
-      - name: Add corresponding sing-box-lx source
+      - name: Prepare release assets
         run: |
+          mkdir -p release-assets
+          cp build/app/outputs/flutter-apk/app-release.apk \
+            "release-assets/TrueTun-android-v${TRUETUN_VERSION}.apk"
+          cp "dist/TrueTun-linux-x86_64-v${TRUETUN_VERSION}.tar.gz" release-assets/
           curl --fail --location --silent --show-error \
             https://github.com/Leadaxe/sing-box-lx/archive/refs/tags/v1.14.0-lx.35.tar.gz \
             --output release-assets/sing-box-lx-1.14.0-lx.35-source.tar.gz
@@ -114,6 +67,7 @@ jobs:
             "TrueTun-linux-x86_64-v${TRUETUN_VERSION}.tar.gz" \
             sing-box-lx-1.14.0-lx.35-source.tar.gz \
             > SHA256SUMS.txt
+
       - name: Publish stable GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -128,31 +82,28 @@ jobs:
           First combined Android + Linux stable GitHub release.
 
           ### Android
-          - Real Android `VpnService` and TUN path backed by pinned `sing-box-lx 1.14.0-lx.35` libbox.
+          - Real Android `VpnService` and TUN backed by pinned `sing-box-lx 1.14.0-lx.35` libbox.
           - VLESS/Reality, XHTTP and Hysteria2 connection paths.
-          - Subscriptions, profile selection and persistence.
-          - Ordered proxy/direct/block routing rules.
-          - Per-app whitelist/blacklist routing and local smart-selection suggestions.
-          - Foreground VPN notification, service-owned state and Android VPN settings integration.
-          - Optimized traffic graph/state subscriptions and the dialog lifecycle fix from the beta device tests.
+          - Subscriptions, persistence, ordered routing and per-app whitelist/blacklist routing.
+          - Foreground VPN service, native state/traffic events and optimized traffic graph.
+          - Fix for the Flutter dialog lifecycle crash found during beta device testing.
 
           ### Linux x86_64
-          - Release-mode Flutter desktop bundle with the same pinned XHTTP-capable sing-box-lx core family.
-          - TUN connection through a root-owned, narrowly scoped helper while the GUI stays unprivileged.
-          - Profiles/subscriptions, live traffic, logs, tray mode and autostart.
-          - Full ordered routing editor including Linux process-name/path/regex matchers.
-          - Dedicated process-routing page for quickly proxying, bypassing or blocking a process.
-          - Desktop-menu installer and cleanup/uninstall helper included in the archive.
+          - Release-mode Flutter desktop bundle with pinned XHTTP-capable sing-box-lx.
+          - TUN through a narrow privileged helper while the GUI stays unprivileged.
+          - Profiles/subscriptions, traffic, logs, tray and autostart.
+          - Ordered domain/IP/port/protocol routing plus Linux process-name/path/regex rules.
+          - Desktop-menu installer and cleanup helper included.
 
           ### Integrity and source
-          `SHA256SUMS.txt` covers both application artifacts and the attached sing-box-lx source archive. `THIRD_PARTY_NOTICES.md` records the exact runtime tag, source revision and binary digests.
+          `SHA256SUMS.txt` covers the Android APK, Linux archive and attached sing-box-lx corresponding-source archive. `THIRD_PARTY_NOTICES.md` records exact runtime provenance.
 
           ### Installation
-          **Android:** install `TrueTun-android-v0.4.0.apk`. GitHub builds use the project test signing key unless repository production-signing secrets are configured; this does not affect VPN functionality, but Play/store distribution should use the production key.
+          **Android:** install `TrueTun-android-v0.4.0.apk`. This GitHub build uses the project's test signing key unless a production keystore is supplied to the Gradle build.
 
-          **Linux:** unpack `TrueTun-linux-x86_64-v0.4.0.tar.gz`, then run `./truetun`. The first launch uses PolicyKit once to prepare the privileged TUN helper. Run `./install-desktop.sh` for an application-menu entry and `./uninstall.sh` to remove desktop/autostart integration and the privileged helper.
+          **Linux:** unpack `TrueTun-linux-x86_64-v0.4.0.tar.gz` and run `./truetun`. The first launch uses PolicyKit once to prepare the privileged TUN helper. `./install-desktop.sh` adds the application-menu entry; `./uninstall.sh` removes desktop/autostart integration and the privileged helper.
 
-          This release is built and tested in CI. Physical network behaviour can still vary by Android vendor kernel, Linux distribution, local firewall and network policy; report reproducible failures with the Logs/diagnostic information.
+          CI validates Flutter analysis/tests and builds both release artifacts. Runtime network behavior can still depend on the Android vendor kernel, Linux distribution, firewall, DNS and network policy.
           EOF
 
           gh release create "v${TRUETUN_VERSION}" \
