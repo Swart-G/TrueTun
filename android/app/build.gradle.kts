@@ -1,13 +1,77 @@
+import java.net.URI
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val libboxVersion = "1.14.0-lx.35"
+val libboxSha256 = "c4bc5f7b6aea3b022fff83421baeacbf672298cd167d828a6484cdbb1e896281"
+val libboxUrl =
+    "https://github.com/Leadaxe/sing-box-lx/releases/download/v$libboxVersion/libbox-$libboxVersion.aar"
+val libboxAar = layout.buildDirectory.file("generated/libbox/libbox-$libboxVersion.aar")
+
+val releaseKeystorePath = System.getenv("TRUETUN_KEYSTORE_PATH")?.trim().orEmpty()
+val releaseKeystorePassword = System.getenv("TRUETUN_KEYSTORE_PASSWORD")?.trim().orEmpty()
+val releaseKeyAlias = System.getenv("TRUETUN_KEY_ALIAS")?.trim().orEmpty()
+val releaseKeyPassword = System.getenv("TRUETUN_KEY_PASSWORD")?.trim().orEmpty()
+val hasReleaseSigning = listOf(
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { it.isNotEmpty() }
+
+fun sha256(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().use { input ->
+        val buffer = ByteArray(1024 * 1024)
+        while (true) {
+            val read = input.read(buffer)
+            if (read <= 0) break
+            digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+val downloadLibbox by tasks.registering {
+    outputs.file(libboxAar)
+    doLast {
+        val target = libboxAar.get().asFile
+        val validExisting = target.isFile && sha256(target) == libboxSha256
+        if (!validExisting) {
+            target.parentFile.mkdirs()
+            val temporary = File(target.parentFile, "${target.name}.part")
+            temporary.delete()
+            URI(libboxUrl).toURL().openStream().use { input ->
+                temporary.outputStream().buffered().use { output ->
+                    input.copyTo(output)
+                }
+            }
+            check(sha256(temporary) == libboxSha256) {
+                "Downloaded libbox checksum mismatch"
+            }
+            if (target.exists()) target.delete()
+            check(temporary.renameTo(target)) {
+                "Unable to move downloaded libbox into place"
+            }
+        }
+    }
+}
+
+val generatedLibbox = files(libboxAar).builtBy(downloadLibbox)
+
 android {
     namespace = "app.truetun"
     compileSdk = 37
     ndkVersion = flutter.ndkVersion
+
+    buildFeatures {
+        buildConfig = true
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -16,23 +80,34 @@ android {
 
     defaultConfig {
         applicationId = "app.truetun"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
-        // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
-        // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
-        // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
-        // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        buildConfigField("String", "LIBBOX_VARIANT", "\"sing-box-lx-$libboxVersion\"")
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("productionRelease") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // CI/GitHub source releases remain installable without repository
+            // secrets by falling back to the stable project test key. Official
+            // store/distribution builds should provide TRUETUN_KEYSTORE_* vars.
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("productionRelease")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
@@ -41,6 +116,12 @@ kotlin {
     compilerOptions {
         jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
     }
+}
+
+dependencies {
+    // Pinned XHTTP-capable sing-box-lx Android binding. The SHA-256 is verified
+    // before Gradle exposes the generated AAR to Kotlin/Android compilation.
+    implementation(generatedLibbox)
 }
 
 flutter {

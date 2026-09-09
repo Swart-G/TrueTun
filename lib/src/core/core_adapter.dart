@@ -43,6 +43,20 @@ class CoreFailure extends CoreEvent {
   final String message;
 }
 
+class CoreTraffic extends CoreEvent {
+  const CoreTraffic({
+    required this.upload,
+    required this.download,
+    required this.uploadPerSecond,
+    required this.downloadPerSecond,
+  });
+
+  final int upload;
+  final int download;
+  final int uploadPerSecond;
+  final int downloadPerSecond;
+}
+
 class CoreException implements Exception {
   const CoreException(this.message);
 

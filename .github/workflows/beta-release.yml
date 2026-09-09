@@ -1,0 +1,90 @@
+name: Android Beta Release
+
+on:
+  push:
+    branches:
+      - feat/android-native-vpn-runtime
+    paths:
+      - .github/workflows/beta-release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Verify Dart sources
+        run: |
+          dart format lib test
+          flutter analyze
+          flutter test
+
+      - name: Build Android release APK
+        run: flutter build apk --release
+
+      - name: Prepare beta assets
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/TrueTun-android-v0.4.0-beta.2.apk
+          cd dist
+          sha256sum TrueTun-android-v0.4.0-beta.2.apk > SHA256SUMS.txt
+
+      - name: Create GitHub beta prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > release-notes.md <<'EOF'
+          ## TrueTun 0.4.0 Beta 2
+
+          Android device-test beta focused on the issues found in Beta 1: Flutter lifecycle crashes, severe UI jank, the traffic graph and missing XHTTP support.
+
+          ### Fixed on Android
+          - Fixed the dialog lifecycle bug that could cascade from `TextEditingController was used after being disposed` into Flutter's `_dependents.isEmpty` assertion.
+          - Dialog controllers now live for the complete dialog route lifetime; a regression widget test reproduces the Beta 1 transition/teardown scenario.
+          - Beta APK is built in Flutter release mode instead of debug mode.
+          - Reworked state subscriptions so retained/off-screen pages no longer rebuild on every traffic sample.
+          - Replaced the Flex-based traffic bars with a lightweight `CustomPainter` line graph inside a `RepaintBoundary`.
+          - Reduced Android native traffic UI events from 2 Hz to 1 Hz.
+          - Optimized the installed-app list layout for large app inventories.
+
+          ### XHTTP
+          - Android core switched from vanilla upstream libbox to the pinned XHTTP-capable `sing-box-lx 1.14.0-lx.35` Android AAR.
+          - The AAR is downloaded from its exact GitHub Release and SHA-256 verified before Gradle compilation.
+          - XHTTP is exposed in native capabilities/diagnostics.
+          - Existing VLESS XHTTP parsing keeps `mode`, `host` and `path`; omitted mode uses the core's `auto` behavior.
+          - Hysteria2, VLESS/Reality, TUN, app routing, ordered routing rules and subscriptions remain in the same Android runtime path.
+
+          ### Verification before publishing
+          - `flutter analyze` must pass.
+          - The complete Flutter test suite, including the Android lifecycle regression test, must pass.
+          - Android release APK must compile successfully against the pinned XHTTP-capable libbox API.
+
+          ### Beta warning
+          This remains a prerelease intended for physical-device validation. In particular, XHTTP/Reality, Hysteria2 regression, long sessions, Wi-Fi/LTE switching, Always-on VPN and leak behaviour still require device testing.
+
+          The release APK is currently signed with the project test/debug key until production signing is configured. SHA-256 is provided in `SHA256SUMS.txt`.
+          EOF
+
+          gh release create v0.4.0-beta.2 \
+            dist/TrueTun-android-v0.4.0-beta.2.apk \
+            dist/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" \
+            --title "TrueTun 0.4.0 Beta 2" \
+            --notes-file release-notes.md \
+            --prerelease

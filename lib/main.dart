@@ -3,9 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:tray_manager/tray_manager.dart' as tray;
-import 'package:truetun/src/app.dart';
+import 'package:truetun/src/android_mobile_app_v2.dart';
 import 'package:truetun/src/application/app_state.dart';
 import 'package:truetun/src/core/core_adapter.dart';
+import 'package:truetun/src/linux_desktop_app.dart';
 import 'package:window_manager/window_manager.dart';
 
 Future<void> main(List<String> arguments) async {
@@ -18,7 +19,9 @@ Future<void> main(List<String> arguments) async {
     ProviderScope(
       child: _DesktopLifecycle(
         startHidden: arguments.contains('--hidden'),
-        child: const TrueTunApp(),
+        child: Platform.isAndroid
+            ? const TrueTunAndroidApp()
+            : const TrueTunLinuxApp(),
       ),
     ),
   );

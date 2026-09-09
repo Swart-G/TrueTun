@@ -28,21 +28,21 @@ class SingBoxConfigCompiler {
     _validatePreferences(snapshot);
 
     final proxy = _outboundCompiler.compile(snapshot.node, tag: 'proxy');
-    // Keep proxy endpoint resolution outside the tunnel to prevent a
-    // dependency loop when more than one DNS transport is configured.
     proxy['domain_resolver'] = 'dns-direct';
 
     final tun = <String, Object>{
       'type': 'tun',
       'tag': 'tun-in',
-      'interface_name': 'truetun0',
+      if (snapshot.platform != RoutingPlatform.android)
+        'interface_name': 'truetun0',
       'address': <String>[
         '172.19.0.1/30',
         if (snapshot.preferences.ipv6) 'fdfe:dcba:9876::1/126',
       ],
       'mtu': snapshot.preferences.mtu,
       'auto_route': true,
-      'strict_route': snapshot.preferences.strictRoute,
+      if (snapshot.platform != RoutingPlatform.android)
+        'strict_route': snapshot.preferences.strictRoute,
       'stack': snapshot.preferences.stack,
     };
 
@@ -73,7 +73,8 @@ class SingBoxConfigCompiler {
       'rules': routeRules,
       'final': 'proxy',
       'default_domain_resolver': 'dns-direct',
-      if (snapshot.platform == RoutingPlatform.linux)
+      if (snapshot.platform == RoutingPlatform.linux ||
+          snapshot.platform == RoutingPlatform.android)
         'auto_detect_interface': true,
     };
 
@@ -104,9 +105,6 @@ class SingBoxConfigCompiler {
         <String, Object>{'type': 'direct', 'tag': 'direct'},
       ],
       'route': route,
-      // Desktop Linux reads traffic counters from sing-box's loopback Clash
-      // API. Android must never expose a local HTTP/controller socket; mobile
-      // metrics have to come through the native core bridge instead.
       if (snapshot.platform == RoutingPlatform.linux)
         'experimental': <String, Object>{
           'clash_api': <String, Object>{
@@ -197,6 +195,5 @@ class SingBoxConfigCompiler {
   static const _allowedAndroidTunPatchKeys = <String>{
     'include_package',
     'exclude_package',
-    'include_android_user',
   };
 }

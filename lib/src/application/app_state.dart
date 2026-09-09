@@ -2,20 +2,25 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:truetun/src/application/linux_desktop_settings.dart';
+import 'package:truetun/src/apps/app_routing_policy.dart';
 import 'package:truetun/src/core/connection_controller.dart';
 import 'package:truetun/src/core/connection_diagnostics.dart';
 import 'package:truetun/src/core/connection_snapshot.dart';
 import 'package:truetun/src/core/core_adapter.dart';
+import 'package:truetun/src/core/core_adapter_factory.dart';
 import 'package:truetun/src/core/core_preferences.dart';
-import 'package:truetun/src/core/process_sing_box_adapter.dart';
-import 'package:truetun/src/profiles/proxy_node.dart';
-import 'package:truetun/src/profiles/profile_group.dart';
-import 'package:truetun/src/profiles/subscription_service.dart';
-import 'package:truetun/src/profiles/proxy_profile_parser.dart';
 import 'package:truetun/src/persistence/app_database.dart';
 import 'package:truetun/src/persistence/profile_repository.dart';
+import 'package:truetun/src/persistence/routing_settings_repository.dart';
+import 'package:truetun/src/platform/android/android_platform_bridge.dart';
+import 'package:truetun/src/profiles/profile_group.dart';
+import 'package:truetun/src/profiles/proxy_node.dart';
+import 'package:truetun/src/profiles/proxy_profile_parser.dart';
+import 'package:truetun/src/profiles/subscription_service.dart';
 import 'package:truetun/src/routing/routing_rule.dart';
-import 'package:truetun/src/application/linux_desktop_settings.dart';
+
+const _androidPackageName = 'app.truetun';
 
 class AppState {
   const AppState({
@@ -36,6 +41,12 @@ class AppState {
     this.corePreferences = const CorePreferences(),
     this.autostartEnabled = false,
     this.minimizeToTray = true,
+    this.routingRules = const [],
+    this.appRoutingPolicy = const AppRoutingPolicy(
+      mode: AppRoutingMode.proxyAllExceptSelected,
+    ),
+    this.installedApps = const [],
+    this.loadingInstalledApps = false,
   });
 
   final ProxyNode? node;
@@ -55,6 +66,10 @@ class AppState {
   final CorePreferences corePreferences;
   final bool autostartEnabled;
   final bool minimizeToTray;
+  final List<RoutingRule> routingRules;
+  final AppRoutingPolicy appRoutingPolicy;
+  final List<InstalledAppDescriptor> installedApps;
+  final bool loadingInstalledApps;
 
   AppState copyWith({
     ProxyNode? node,
@@ -78,6 +93,10 @@ class AppState {
     CorePreferences? corePreferences,
     bool? autostartEnabled,
     bool? minimizeToTray,
+    List<RoutingRule>? routingRules,
+    AppRoutingPolicy? appRoutingPolicy,
+    List<InstalledAppDescriptor>? installedApps,
+    bool? loadingInstalledApps,
   }) {
     return AppState(
       node: clearNode ? null : node ?? this.node,
@@ -99,13 +118,19 @@ class AppState {
       corePreferences: corePreferences ?? this.corePreferences,
       autostartEnabled: autostartEnabled ?? this.autostartEnabled,
       minimizeToTray: minimizeToTray ?? this.minimizeToTray,
+      routingRules: routingRules ?? this.routingRules,
+      appRoutingPolicy: appRoutingPolicy ?? this.appRoutingPolicy,
+      installedApps: installedApps ?? this.installedApps,
+      loadingInstalledApps: loadingInstalledApps ?? this.loadingInstalledApps,
     );
   }
 }
 
 class TrafficSample {
-  const TrafficSample(
-      {required this.uploadPerSecond, required this.downloadPerSecond});
+  const TrafficSample({
+    required this.uploadPerSecond,
+    required this.downloadPerSecond,
+  });
 
   final int uploadPerSecond;
   final int downloadPerSecond;
@@ -121,9 +146,16 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
   return ProfileRepository(database: ref.watch(databaseProvider));
 });
 
+final routingSettingsRepositoryProvider = Provider<RoutingSettingsRepository>((ref) {
+  return RoutingSettingsRepository(database: ref.watch(databaseProvider));
+});
+
 final appControllerProvider =
     StateNotifierProvider<AppController, AppState>((ref) {
-  return AppController(repository: ref.watch(profileRepositoryProvider));
+  return AppController(
+    repository: ref.watch(profileRepositoryProvider),
+    routingSettingsRepository: ref.watch(routingSettingsRepositoryProvider),
+  );
 });
 
 class AppController extends StateNotifier<AppState> {
@@ -133,18 +165,24 @@ class AppController extends StateNotifier<AppState> {
     ConnectionDiagnostics diagnostics = const ConnectionDiagnostics(),
     SubscriptionService subscriptions = const SubscriptionService(),
     ProfileRepository? repository,
+    RoutingSettingsRepository? routingSettingsRepository,
+    AndroidPlatformBridge androidBridge = const AndroidPlatformBridge(),
     LinuxDesktopSettings desktopSettings = const LinuxDesktopSettings(),
   })  : _parser = parser,
         _connection = connection ??
-            ConnectionController(adapter: ProcessSingBoxAdapter()),
+            ConnectionController(adapter: CoreAdapterFactory.create()),
         _diagnostics = diagnostics,
         _subscriptions = subscriptions,
         _repository = repository,
+        _routingSettings = routingSettingsRepository,
+        _androidBridge = androidBridge,
         _desktopSettings = desktopSettings,
         super(const AppState()) {
     _subscription = _connection.events.listen(_onCoreEvent);
     if (_repository != null) unawaited(_restoreProfiles());
+    if (_routingSettings != null) unawaited(_restoreRoutingSettings());
     if (Platform.isLinux) unawaited(_restoreDesktopSettings());
+    if (Platform.isAndroid) unawaited(loadInstalledApps());
   }
 
   final ProxyProfileParser _parser;
@@ -152,6 +190,8 @@ class AppController extends StateNotifier<AppState> {
   final ConnectionDiagnostics _diagnostics;
   final SubscriptionService _subscriptions;
   final ProfileRepository? _repository;
+  final RoutingSettingsRepository? _routingSettings;
+  final AndroidPlatformBridge _androidBridge;
   final LinuxDesktopSettings _desktopSettings;
   late final StreamSubscription<CoreEvent> _subscription;
   Timer? _metricsTimer;
@@ -237,6 +277,7 @@ class AppController extends StateNotifier<AppState> {
   }
 
   Future<void> setAutostart(bool enabled) async {
+    if (!Platform.isLinux) return;
     await _desktopSettings.setAutostart(enabled);
     state = state.copyWith(autostartEnabled: enabled);
   }
@@ -344,8 +385,7 @@ class AppController extends StateNotifier<AppState> {
       );
       _replaceGroup(updated);
       await _repository?.saveGroup(updated);
-      _addLog(
-          'Updated subscription ${group.name}: ${profiles.length} profiles');
+      _addLog('Updated subscription ${group.name}: ${profiles.length} profiles');
       if (state.node == null && profiles.isNotEmpty) {
         selectProfile(group.id, profiles.first.id);
       }
@@ -356,8 +396,7 @@ class AppController extends StateNotifier<AppState> {
   }
 
   void selectProfile(String groupId, String profileId) {
-    final group =
-        state.groups.where((value) => value.id == groupId).firstOrNull;
+    final group = state.groups.where((value) => value.id == groupId).firstOrNull;
     final profile =
         group?.profiles.where((value) => value.id == profileId).firstOrNull;
     if (profile == null) return;
@@ -371,8 +410,7 @@ class AppController extends StateNotifier<AppState> {
   }
 
   Future<void> deleteGroup(String groupId) async {
-    final removed =
-        state.groups.where((group) => group.id == groupId).firstOrNull;
+    final removed = state.groups.where((group) => group.id == groupId).firstOrNull;
     final groups = state.groups.where((group) => group.id != groupId).toList();
     if (state.selectedGroupId == groupId) {
       state = state.copyWith(
@@ -387,6 +425,83 @@ class AppController extends StateNotifier<AppState> {
     _autoUpdateTimers.remove(groupId)?.cancel();
   }
 
+  Future<void> loadInstalledApps() async {
+    if (!Platform.isAndroid || state.loadingInstalledApps) return;
+    state = state.copyWith(loadingInstalledApps: true);
+    try {
+      final apps = await _androidBridge.getInstalledApps();
+      if (!mounted) return;
+      state = state.copyWith(
+        installedApps: apps,
+        loadingInstalledApps: false,
+        clearError: true,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      state = state.copyWith(
+        loadingInstalledApps: false,
+        error: 'Unable to read installed apps: $error',
+      );
+    }
+  }
+
+  Future<void> updateAppRoutingPolicy(AppRoutingPolicy policy) async {
+    state = state.copyWith(appRoutingPolicy: policy);
+    await _routingSettings?.saveAppRoutingPolicy(policy);
+  }
+
+  Future<void> setAppRoutingMode(AppRoutingMode mode) => updateAppRoutingPolicy(
+        AppRoutingPolicy(
+          mode: mode,
+          selectedPackageNames: state.appRoutingPolicy.selectedPackageNames,
+        ),
+      );
+
+  Future<void> setAppSelected(String packageName, bool selected) async {
+    final packages = {...state.appRoutingPolicy.selectedPackageNames};
+    if (selected) {
+      packages.add(packageName);
+    } else {
+      packages.remove(packageName);
+    }
+    await updateAppRoutingPolicy(
+      AppRoutingPolicy(mode: state.appRoutingPolicy.mode, selectedPackageNames: packages),
+    );
+  }
+
+  Future<void> addRoutingRule(RoutingRule rule) async {
+    final rules = [...state.routingRules, rule];
+    state = state.copyWith(routingRules: rules);
+    await _routingSettings?.saveRoutingRules(rules);
+  }
+
+  Future<void> updateRoutingRule(RoutingRule rule) async {
+    final rules = [
+      for (final existing in state.routingRules)
+        if (existing.id == rule.id) rule else existing,
+    ];
+    state = state.copyWith(routingRules: rules);
+    await _routingSettings?.saveRoutingRules(rules);
+  }
+
+  Future<void> deleteRoutingRule(String id) async {
+    final rules = state.routingRules.where((rule) => rule.id != id).toList();
+    state = state.copyWith(routingRules: rules);
+    await _routingSettings?.saveRoutingRules(rules);
+  }
+
+  Future<void> reorderRoutingRule(int oldIndex, int newIndex) async {
+    final rules = [...state.routingRules];
+    if (oldIndex < 0 || oldIndex >= rules.length) return;
+    var target = newIndex;
+    if (target > oldIndex) target -= 1;
+    if (target < 0 || target >= rules.length) return;
+    final rule = rules.removeAt(oldIndex);
+    rules.insert(target, rule);
+    state = state.copyWith(routingRules: rules);
+    await _routingSettings?.saveRoutingRules(rules);
+  }
+
   void _replaceGroup(ProfileGroup replacement) {
     state = state.copyWith(
       groups: [
@@ -397,8 +512,7 @@ class AppController extends StateNotifier<AppState> {
   }
 
   Future<void> _saveGroup(String groupId) async {
-    final group =
-        state.groups.where((value) => value.id == groupId).firstOrNull;
+    final group = state.groups.where((value) => value.id == groupId).firstOrNull;
     if (group != null) await _repository?.saveGroup(group);
   }
 
@@ -408,12 +522,10 @@ class AppController extends StateNotifier<AppState> {
       final selection = await _repository.loadSelection();
       final corePreferences = await _repository.loadCorePreferences();
       final minimizeToTray = await _repository.loadMinimizeToTray();
-      if (!mounted) return;
-      if (state.groups.isNotEmpty) return;
+      if (!mounted || state.groups.isNotEmpty) return;
       ProxyNode? selectedNode;
       if (selection.$1 != null && selection.$2 != null) {
-        final group =
-            groups.where((value) => value.id == selection.$1).firstOrNull;
+        final group = groups.where((value) => value.id == selection.$1).firstOrNull;
         selectedNode = group?.profiles
             .where((value) => value.id == selection.$2)
             .firstOrNull
@@ -437,6 +549,17 @@ class AppController extends StateNotifier<AppState> {
     }
   }
 
+  Future<void> _restoreRoutingSettings() async {
+    try {
+      final policy = await _routingSettings!.loadAppRoutingPolicy();
+      final rules = await _routingSettings.loadRoutingRules();
+      if (!mounted) return;
+      state = state.copyWith(appRoutingPolicy: policy, routingRules: rules);
+    } catch (error) {
+      if (mounted) _addLog('Unable to restore routing settings: $error');
+    }
+  }
+
   Future<void> _restoreDesktopSettings() async {
     final enabled = await _desktopSettings.isAutostartEnabled();
     if (mounted) state = state.copyWith(autostartEnabled: enabled);
@@ -445,12 +568,16 @@ class AppController extends StateNotifier<AppState> {
   Future<void> connect() async {
     final node = state.node;
     if (node == null) return;
-    if (!Platform.isLinux) {
-      state = state.copyWith(
-        error: 'The Android VPN bridge is not available in this build yet.',
-      );
+    final platform = Platform.isAndroid
+        ? RoutingPlatform.android
+        : Platform.isLinux
+            ? RoutingPlatform.linux
+            : RoutingPlatform.other;
+    if (platform == RoutingPlatform.other) {
+      state = state.copyWith(error: 'This platform does not have a production VPN backend.');
       return;
     }
+
     try {
       state = state.copyWith(
         clearError: true,
@@ -463,12 +590,17 @@ class AppController extends StateNotifier<AppState> {
       await _connection.connect(
         ConnectionSnapshot(
           node: node,
-          platform: RoutingPlatform.linux,
+          platform: platform,
           preferences: state.corePreferences,
+          routingRules: state.routingRules,
+          androidTunPatch: platform == RoutingPlatform.android
+              ? state.appRoutingPolicy.toAndroidTunPatch(
+                  ownPackageName: _androidPackageName,
+                )
+              : const {},
         ),
       );
-      _startMetrics();
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      if (Platform.isLinux) _startMetrics();
       if (mounted && state.coreState == ProxyCoreState.running) {
         await testConnection();
       }
@@ -485,6 +617,14 @@ class AppController extends StateNotifier<AppState> {
     await _connection.disconnect();
   }
 
+  Future<void> reconnect() async {
+    if (state.coreState == ProxyCoreState.running ||
+        state.coreState == ProxyCoreState.failed) {
+      await disconnect();
+    }
+    await connect();
+  }
+
   Future<void> testConnection() async {
     if (state.coreState != ProxyCoreState.running || state.testing) return;
     state = state.copyWith(testing: true, clearError: true);
@@ -493,13 +633,14 @@ class AppController extends StateNotifier<AppState> {
       if (!mounted) return;
       state = state.copyWith(latency: result.latency, testing: false);
       _addLog(
-        'Connection test passed: HTTP ${result.statusCode}, '
-        '${result.latency.inMilliseconds} ms',
+        'Connection test passed: HTTP ${result.statusCode}, ${result.latency.inMilliseconds} ms',
       );
     } catch (error) {
       if (!mounted) return;
       state = state.copyWith(
-          testing: false, error: 'Connection test failed: $error');
+        testing: false,
+        error: 'Connection test failed: $error',
+      );
       _addLog('Connection test failed: $error');
     }
   }
@@ -509,16 +650,14 @@ class AppController extends StateNotifier<AppState> {
   void _startMetrics() {
     _metricsTimer?.cancel();
     _lastMetricsAt = DateTime.now();
-    _metricsTimer =
-        Timer.periodic(const Duration(milliseconds: 250), (_) async {
+    _metricsTimer = Timer.periodic(const Duration(milliseconds: 250), (_) async {
       if (_metricsReadInProgress) return;
       _metricsReadInProgress = true;
       try {
         final traffic = await _diagnostics.readTraffic();
         if (!mounted || state.coreState != ProxyCoreState.running) return;
         final now = DateTime.now();
-        final elapsed =
-            now.difference(_lastMetricsAt!).inMilliseconds.clamp(1, 5000);
+        final elapsed = now.difference(_lastMetricsAt!).inMilliseconds.clamp(1, 5000);
         _lastMetricsAt = now;
         final uploadRate = traffic.upload >= state.upload
             ? ((traffic.upload - state.upload) * 1000 / elapsed).round()
@@ -526,26 +665,34 @@ class AppController extends StateNotifier<AppState> {
         final downloadRate = traffic.download >= state.download
             ? ((traffic.download - state.download) * 1000 / elapsed).round()
             : 0;
-        final history = [
-          ...state.trafficHistory,
-          TrafficSample(
-            uploadPerSecond: uploadRate,
-            downloadPerSecond: downloadRate,
-          ),
-        ];
-        state = state.copyWith(
-          upload: traffic.upload,
-          download: traffic.download,
-          trafficHistory: history.length > 120
-              ? history.sublist(history.length - 120)
-              : history,
+        _applyTraffic(
+          traffic.upload,
+          traffic.download,
+          uploadRate,
+          downloadRate,
         );
       } catch (_) {
-        // The metrics API can take a moment to become available after startup.
+        // The Linux Clash API can take a moment to become available.
       } finally {
         _metricsReadInProgress = false;
       }
     });
+  }
+
+  void _applyTraffic(int upload, int download, int uploadRate, int downloadRate) {
+    final history = [
+      ...state.trafficHistory,
+      TrafficSample(
+        uploadPerSecond: uploadRate,
+        downloadPerSecond: downloadRate,
+      ),
+    ];
+    state = state.copyWith(
+      upload: upload,
+      download: download,
+      trafficHistory:
+          history.length > 120 ? history.sublist(history.length - 120) : history,
+    );
   }
 
   void _scheduleAutoUpdate(ProfileGroup group) {
@@ -580,6 +727,15 @@ class AppController extends StateNotifier<AppState> {
         );
       case CoreFailure(:final message):
         state = state.copyWith(error: message);
+      case CoreTraffic(
+          :final upload,
+          :final download,
+          :final uploadPerSecond,
+          :final downloadPerSecond,
+        ):
+        if (Platform.isAndroid) {
+          _applyTraffic(upload, download, uploadPerSecond, downloadPerSecond);
+        }
     }
   }
 

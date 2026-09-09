@@ -60,14 +60,17 @@ void main() {
     expect(result['method'], 'drop');
   });
 
-  test('Android whitelist becomes include_package', () {
+  test('Android whitelist includes selected app and TrueTun diagnostics', () {
     const policy = AppRoutingPolicy(
       mode: AppRoutingMode.proxyOnlySelected,
       selectedPackageNames: {'org.telegram.messenger', 'app.truetun'},
     );
 
     final result = policy.toAndroidTunPatch(ownPackageName: 'app.truetun');
-    expect(result['include_package'], ['org.telegram.messenger']);
+    expect(
+      result['include_package'],
+      ['app.truetun', 'org.telegram.messenger'],
+    );
   });
 
   test('detects VLESS share link', () {
