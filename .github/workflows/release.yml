@@ -17,7 +17,7 @@ jobs:
   android:
     runs-on: ubuntu-latest
     env:
-      TRUETUN_KEYSTORE_PATH: ${{ runner.temp }}/truetun-release.jks
+      TRUETUN_KEYSTORE_PATH: /tmp/truetun-release.jks
       TRUETUN_KEYSTORE_BASE64: ${{ secrets.TRUETUN_KEYSTORE_BASE64 }}
       TRUETUN_KEYSTORE_PASSWORD: ${{ secrets.TRUETUN_KEYSTORE_PASSWORD }}
       TRUETUN_KEY_ALIAS: ${{ secrets.TRUETUN_KEY_ALIAS }}
