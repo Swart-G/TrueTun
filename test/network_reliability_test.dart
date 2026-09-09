@@ -34,6 +34,13 @@ void main() {
     expect(route['default_domain_resolver'], 'dns-direct');
     expect(route['final'], 'proxy');
 
+    final rules = route['rules']! as List<Map<String, Object>>;
+    expect(rules[2]['network'], ['udp']);
+    expect(rules[2]['port'], [443]);
+    expect(rules[2]['action'], 'reject');
+    expect(rules[2]['method'], 'default');
+    expect(rules[2]['no_drop'], isTrue);
+
     final experimental = config['experimental']! as Map<String, Object>;
     final clashApi = experimental['clash_api']! as Map<String, Object>;
     expect(clashApi['external_controller'], '127.0.0.1:19090');

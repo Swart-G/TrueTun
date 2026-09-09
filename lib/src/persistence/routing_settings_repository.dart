@@ -9,6 +9,28 @@ class RoutingSettingsRepository {
 
   final AppDatabase database;
 
+  Future<RoutingSettings> loadRoutingSettings() async {
+    final raw = await database.readSetting('routing_settings');
+    if (raw == null || raw.isEmpty) return const RoutingSettings();
+    final json = jsonDecode(raw) as Map<String, dynamic>;
+    final fallback = RouteActionType.values
+        .where((value) => value.name == json['fallbackAction'])
+        .firstOrNull;
+    return RoutingSettings(
+      enabled: json['enabled'] == true,
+      fallbackAction: fallback ?? RouteActionType.proxy,
+    );
+  }
+
+  Future<void> saveRoutingSettings(RoutingSettings settings) =>
+      database.saveSetting(
+        'routing_settings',
+        jsonEncode({
+          'enabled': settings.enabled,
+          'fallbackAction': settings.fallbackAction.name,
+        }),
+      );
+
   Future<AppRoutingPolicy> loadAppRoutingPolicy() async {
     final raw = await database.readSetting('android_app_routing_policy');
     if (raw == null || raw.isEmpty) {
@@ -23,8 +45,9 @@ class RoutingSettingsRepository {
         .firstOrNull;
     return AppRoutingPolicy(
       mode: mode ?? AppRoutingMode.proxyAllExceptSelected,
-      selectedPackageNames:
-          (json['packages'] as List<dynamic>? ?? const []).cast<String>().toSet(),
+      selectedPackageNames: (json['packages'] as List<dynamic>? ?? const [])
+          .cast<String>()
+          .toSet(),
     );
   }
 
@@ -47,7 +70,8 @@ class RoutingSettingsRepository {
         .toList(growable: false);
   }
 
-  Future<void> saveRoutingRules(List<RoutingRule> rules) => database.saveSetting(
+  Future<void> saveRoutingRules(List<RoutingRule> rules) =>
+      database.saveSetting(
         'routing_rules',
         jsonEncode(rules.map(_ruleToJson).toList(growable: false)),
       );
@@ -92,7 +116,8 @@ class RoutingSettingsRepository {
       _ => RouteAction.proxy((json['outboundTag'] as String?) ?? 'proxy'),
     };
     return RoutingRule(
-      id: json['id'] as String? ?? 'rule-${DateTime.now().microsecondsSinceEpoch}',
+      id: json['id'] as String? ??
+          'rule-${DateTime.now().microsecondsSinceEpoch}',
       name: json['name'] as String? ?? 'Rule',
       enabled: json['enabled'] != false,
       action: action,

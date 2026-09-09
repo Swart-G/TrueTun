@@ -29,6 +29,7 @@ class AppState {
     this.error,
     this.logs = const [],
     this.latency,
+    this.speedTestResult,
     this.upload = 0,
     this.download = 0,
     this.trafficHistory = const [],
@@ -42,6 +43,7 @@ class AppState {
     this.autostartEnabled = false,
     this.minimizeToTray = true,
     this.routingRules = const [],
+    this.routingSettings = const RoutingSettings(),
     this.appRoutingPolicy = const AppRoutingPolicy(
       mode: AppRoutingMode.proxyAllExceptSelected,
     ),
@@ -54,6 +56,7 @@ class AppState {
   final String? error;
   final List<String> logs;
   final Duration? latency;
+  final SpeedTestResult? speedTestResult;
   final int upload;
   final int download;
   final List<TrafficSample> trafficHistory;
@@ -67,6 +70,7 @@ class AppState {
   final bool autostartEnabled;
   final bool minimizeToTray;
   final List<RoutingRule> routingRules;
+  final RoutingSettings routingSettings;
   final AppRoutingPolicy appRoutingPolicy;
   final List<InstalledAppDescriptor> installedApps;
   final bool loadingInstalledApps;
@@ -80,6 +84,8 @@ class AppState {
     List<String>? logs,
     Duration? latency,
     bool clearLatency = false,
+    SpeedTestResult? speedTestResult,
+    bool clearSpeedTestResult = false,
     int? upload,
     int? download,
     List<TrafficSample>? trafficHistory,
@@ -94,6 +100,7 @@ class AppState {
     bool? autostartEnabled,
     bool? minimizeToTray,
     List<RoutingRule>? routingRules,
+    RoutingSettings? routingSettings,
     AppRoutingPolicy? appRoutingPolicy,
     List<InstalledAppDescriptor>? installedApps,
     bool? loadingInstalledApps,
@@ -104,6 +111,8 @@ class AppState {
       error: clearError ? null : error ?? this.error,
       logs: logs ?? this.logs,
       latency: clearLatency ? null : latency ?? this.latency,
+      speedTestResult:
+          clearSpeedTestResult ? null : speedTestResult ?? this.speedTestResult,
       upload: upload ?? this.upload,
       download: download ?? this.download,
       trafficHistory: trafficHistory ?? this.trafficHistory,
@@ -119,6 +128,7 @@ class AppState {
       autostartEnabled: autostartEnabled ?? this.autostartEnabled,
       minimizeToTray: minimizeToTray ?? this.minimizeToTray,
       routingRules: routingRules ?? this.routingRules,
+      routingSettings: routingSettings ?? this.routingSettings,
       appRoutingPolicy: appRoutingPolicy ?? this.appRoutingPolicy,
       installedApps: installedApps ?? this.installedApps,
       loadingInstalledApps: loadingInstalledApps ?? this.loadingInstalledApps,
@@ -146,7 +156,8 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
   return ProfileRepository(database: ref.watch(databaseProvider));
 });
 
-final routingSettingsRepositoryProvider = Provider<RoutingSettingsRepository>((ref) {
+final routingSettingsRepositoryProvider =
+    Provider<RoutingSettingsRepository>((ref) {
   return RoutingSettingsRepository(database: ref.watch(databaseProvider));
 });
 
@@ -385,7 +396,8 @@ class AppController extends StateNotifier<AppState> {
       );
       _replaceGroup(updated);
       await _repository?.saveGroup(updated);
-      _addLog('Updated subscription ${group.name}: ${profiles.length} profiles');
+      _addLog(
+          'Updated subscription ${group.name}: ${profiles.length} profiles');
       if (state.node == null && profiles.isNotEmpty) {
         selectProfile(group.id, profiles.first.id);
       }
@@ -396,7 +408,8 @@ class AppController extends StateNotifier<AppState> {
   }
 
   void selectProfile(String groupId, String profileId) {
-    final group = state.groups.where((value) => value.id == groupId).firstOrNull;
+    final group =
+        state.groups.where((value) => value.id == groupId).firstOrNull;
     final profile =
         group?.profiles.where((value) => value.id == profileId).firstOrNull;
     if (profile == null) return;
@@ -410,7 +423,8 @@ class AppController extends StateNotifier<AppState> {
   }
 
   Future<void> deleteGroup(String groupId) async {
-    final removed = state.groups.where((group) => group.id == groupId).firstOrNull;
+    final removed =
+        state.groups.where((group) => group.id == groupId).firstOrNull;
     final groups = state.groups.where((group) => group.id != groupId).toList();
     if (state.selectedGroupId == groupId) {
       state = state.copyWith(
@@ -465,7 +479,8 @@ class AppController extends StateNotifier<AppState> {
       packages.remove(packageName);
     }
     await updateAppRoutingPolicy(
-      AppRoutingPolicy(mode: state.appRoutingPolicy.mode, selectedPackageNames: packages),
+      AppRoutingPolicy(
+          mode: state.appRoutingPolicy.mode, selectedPackageNames: packages),
     );
   }
 
@@ -473,6 +488,11 @@ class AppController extends StateNotifier<AppState> {
     final rules = [...state.routingRules, rule];
     state = state.copyWith(routingRules: rules);
     await _routingSettings?.saveRoutingRules(rules);
+  }
+
+  Future<void> updateRoutingSettings(RoutingSettings settings) async {
+    state = state.copyWith(routingSettings: settings);
+    await _routingSettings?.saveRoutingSettings(settings);
   }
 
   Future<void> updateRoutingRule(RoutingRule rule) async {
@@ -512,7 +532,8 @@ class AppController extends StateNotifier<AppState> {
   }
 
   Future<void> _saveGroup(String groupId) async {
-    final group = state.groups.where((value) => value.id == groupId).firstOrNull;
+    final group =
+        state.groups.where((value) => value.id == groupId).firstOrNull;
     if (group != null) await _repository?.saveGroup(group);
   }
 
@@ -525,7 +546,8 @@ class AppController extends StateNotifier<AppState> {
       if (!mounted || state.groups.isNotEmpty) return;
       ProxyNode? selectedNode;
       if (selection.$1 != null && selection.$2 != null) {
-        final group = groups.where((value) => value.id == selection.$1).firstOrNull;
+        final group =
+            groups.where((value) => value.id == selection.$1).firstOrNull;
         selectedNode = group?.profiles
             .where((value) => value.id == selection.$2)
             .firstOrNull
@@ -553,8 +575,13 @@ class AppController extends StateNotifier<AppState> {
     try {
       final policy = await _routingSettings!.loadAppRoutingPolicy();
       final rules = await _routingSettings.loadRoutingRules();
+      final routingSettings = await _routingSettings.loadRoutingSettings();
       if (!mounted) return;
-      state = state.copyWith(appRoutingPolicy: policy, routingRules: rules);
+      state = state.copyWith(
+        appRoutingPolicy: policy,
+        routingRules: rules,
+        routingSettings: routingSettings,
+      );
     } catch (error) {
       if (mounted) _addLog('Unable to restore routing settings: $error');
     }
@@ -574,7 +601,8 @@ class AppController extends StateNotifier<AppState> {
             ? RoutingPlatform.linux
             : RoutingPlatform.other;
     if (platform == RoutingPlatform.other) {
-      state = state.copyWith(error: 'This platform does not have a production VPN backend.');
+      state = state.copyWith(
+          error: 'This platform does not have a production VPN backend.');
       return;
     }
 
@@ -582,6 +610,7 @@ class AppController extends StateNotifier<AppState> {
       state = state.copyWith(
         clearError: true,
         clearLatency: true,
+        clearSpeedTestResult: true,
         upload: 0,
         download: 0,
         trafficHistory: const [],
@@ -593,6 +622,7 @@ class AppController extends StateNotifier<AppState> {
           platform: platform,
           preferences: state.corePreferences,
           routingRules: state.routingRules,
+          routingSettings: state.routingSettings,
           androidTunPatch: platform == RoutingPlatform.android
               ? state.appRoutingPolicy.toAndroidTunPatch(
                   ownPackageName: _androidPackageName,
@@ -645,19 +675,55 @@ class AppController extends StateNotifier<AppState> {
     }
   }
 
+  Future<void> testSpeed() async {
+    if (state.coreState != ProxyCoreState.running || state.testing) return;
+    state = state.copyWith(
+      testing: true,
+      clearError: true,
+      clearSpeedTestResult: true,
+    );
+    try {
+      final result = await _diagnostics.testSpeed();
+      if (!mounted) return;
+      state = state.copyWith(
+        latency: result.latency,
+        speedTestResult: result,
+        testing: false,
+      );
+      _addLog(
+        'Speed test passed: '
+        'download ${_formatMbps(result.downloadBytesPerSecond)} Mbps, '
+        'upload ${_formatMbps(result.uploadBytesPerSecond)} Mbps, '
+        'latency ${result.latency.inMilliseconds} ms',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      state = state.copyWith(
+        testing: false,
+        error: 'Speed test failed: $error',
+      );
+      _addLog('Speed test failed: $error');
+    }
+  }
+
+  String _formatMbps(int bytesPerSecond) =>
+      (bytesPerSecond * 8 / 1000000).toStringAsFixed(1);
+
   void clearLogs() => state = state.copyWith(logs: const []);
 
   void _startMetrics() {
     _metricsTimer?.cancel();
     _lastMetricsAt = DateTime.now();
-    _metricsTimer = Timer.periodic(const Duration(milliseconds: 250), (_) async {
+    _metricsTimer =
+        Timer.periodic(const Duration(milliseconds: 250), (_) async {
       if (_metricsReadInProgress) return;
       _metricsReadInProgress = true;
       try {
         final traffic = await _diagnostics.readTraffic();
         if (!mounted || state.coreState != ProxyCoreState.running) return;
         final now = DateTime.now();
-        final elapsed = now.difference(_lastMetricsAt!).inMilliseconds.clamp(1, 5000);
+        final elapsed =
+            now.difference(_lastMetricsAt!).inMilliseconds.clamp(1, 5000);
         _lastMetricsAt = now;
         final uploadRate = traffic.upload >= state.upload
             ? ((traffic.upload - state.upload) * 1000 / elapsed).round()
@@ -679,7 +745,8 @@ class AppController extends StateNotifier<AppState> {
     });
   }
 
-  void _applyTraffic(int upload, int download, int uploadRate, int downloadRate) {
+  void _applyTraffic(
+      int upload, int download, int uploadRate, int downloadRate) {
     final history = [
       ...state.trafficHistory,
       TrafficSample(
@@ -690,8 +757,9 @@ class AppController extends StateNotifier<AppState> {
     state = state.copyWith(
       upload: upload,
       download: download,
-      trafficHistory:
-          history.length > 120 ? history.sublist(history.length - 120) : history,
+      trafficHistory: history.length > 120
+          ? history.sublist(history.length - 120)
+          : history,
     );
   }
 

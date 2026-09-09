@@ -60,6 +60,20 @@ void main() {
     expect(result['method'], 'drop');
   });
 
+  test('normalizes a bare top-level suffix for sing-box', () {
+    const rule = RoutingRule(
+      id: 'ru-direct',
+      name: 'Russian domains direct',
+      matcher: RuleMatcher(domainSuffixes: ['ru']),
+      action: RouteAction.direct(),
+    );
+
+    final result =
+        compiler.compileRule(rule, platform: RoutingPlatform.android);
+
+    expect(result['domain_suffix'], ['.ru']);
+  });
+
   test('Android whitelist includes selected app and TrueTun diagnostics', () {
     const policy = AppRoutingPolicy(
       mode: AppRoutingMode.proxyOnlySelected,
@@ -143,8 +157,107 @@ void main() {
     final route = config['route']! as Map<String, Object>;
     expect(route['final'], 'proxy');
     final rules = route['rules']! as List<Map<String, Object>>;
-    expect(rules.first['port'], [53]);
-    expect(rules.first['action'], 'hijack-dns');
+    expect(rules.first['action'], 'sniff');
+    expect(rules.first['sniffer'], ['http', 'tls', 'quic', 'dns']);
+    expect(rules[1]['port'], [53]);
+    expect(rules[1]['action'], 'hijack-dns');
+  });
+
+  test('custom rules are omitted while routing mode is disabled', () {
+    const parser = VlessLinkParser();
+    const configCompiler = SingBoxConfigCompiler();
+    final node = parser.parse(
+      'vless://00000000-0000-4000-8000-000000000000@vpn.example.com:443'
+      '?security=tls&type=tcp',
+    );
+    final config = configCompiler.compileMap(
+      ConnectionSnapshot(
+        node: node,
+        platform: RoutingPlatform.linux,
+        routingRules: const [
+          RoutingRule(
+            id: 'direct-example',
+            name: 'Direct example',
+            matcher: RuleMatcher(domains: ['example.com']),
+            action: RouteAction.direct(),
+          ),
+        ],
+      ),
+    );
+
+    final route = config['route']! as Map<String, Object>;
+    final rules = route['rules']! as List<Map<String, Object>>;
+    expect(rules, hasLength(3));
+    expect(route['final'], 'proxy');
+  });
+
+  test('routing mode compiles rules and direct fallback', () {
+    const parser = VlessLinkParser();
+    const configCompiler = SingBoxConfigCompiler();
+    final node = parser.parse(
+      'vless://00000000-0000-4000-8000-000000000000@vpn.example.com:443'
+      '?security=tls&type=tcp',
+    );
+    final config = configCompiler.compileMap(
+      ConnectionSnapshot(
+        node: node,
+        platform: RoutingPlatform.linux,
+        routingSettings: const RoutingSettings(
+          enabled: true,
+          fallbackAction: RouteActionType.direct,
+        ),
+        routingRules: const [
+          RoutingRule(
+            id: 'proxy-example',
+            name: 'Proxy example',
+            matcher: RuleMatcher(domains: ['example.com']),
+            action: RouteAction.proxy('proxy'),
+          ),
+        ],
+      ),
+    );
+
+    final route = config['route']! as Map<String, Object>;
+    final rules = route['rules']! as List<Map<String, Object>>;
+    expect(rules, hasLength(4));
+    expect(rules.last['domain'], ['example.com']);
+    expect(route['final'], 'direct');
+  });
+
+  test('block fallback is emitted as a valid final catch-all rule', () async {
+    const parser = VlessLinkParser();
+    const configCompiler = SingBoxConfigCompiler();
+    final node = parser.parse(
+      'vless://00000000-0000-4000-8000-000000000000@vpn.example.com:443'
+      '?security=tls&type=tcp',
+    );
+    final config = configCompiler.compileMap(
+      ConnectionSnapshot(
+        node: node,
+        platform: RoutingPlatform.linux,
+        routingSettings: const RoutingSettings(
+          enabled: true,
+          fallbackAction: RouteActionType.block,
+        ),
+      ),
+    );
+
+    final route = config['route']! as Map<String, Object>;
+    final rules = route['rules']! as List<Map<String, Object>>;
+    expect(rules.last['action'], 'reject');
+    expect(rules.last['method'], 'drop');
+
+    final executable = Platform.environment['SING_BOX_BIN'];
+    if (executable == null) return;
+    final directory = await Directory.systemTemp.createTemp('truetun-block-');
+    try {
+      final file = File('${directory.path}/config.json');
+      await file.writeAsString(jsonEncode(config));
+      final result = await Process.run(executable, ['check', '-c', file.path]);
+      expect(result.exitCode, 0, reason: result.stderr.toString());
+    } finally {
+      await directory.delete(recursive: true);
+    }
   });
 
   test('pinned sing-box accepts a compiled TUN configuration', () async {

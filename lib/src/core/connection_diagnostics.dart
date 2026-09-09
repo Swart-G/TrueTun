@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 import 'package:truetun/src/core/sing_box_outbound_compiler.dart';
@@ -19,10 +20,26 @@ class ConnectionTestResult {
   final int statusCode;
 }
 
+class SpeedTestResult {
+  const SpeedTestResult({
+    required this.latency,
+    required this.downloadBytesPerSecond,
+    required this.uploadBytesPerSecond,
+  });
+
+  final Duration latency;
+  final int downloadBytesPerSecond;
+  final int uploadBytesPerSecond;
+}
+
 class ConnectionDiagnostics {
-  const ConnectionDiagnostics({this.apiPort = 19090});
+  const ConnectionDiagnostics({
+    this.apiPort = 19090,
+    this.speedTestBaseUrl = 'https://speed.cloudflare.com',
+  });
 
   final int apiPort;
+  final String speedTestBaseUrl;
 
   Future<Duration> testEndpoint(String server, int port) async {
     final attempts = <Duration>[];
@@ -180,6 +197,143 @@ class ConnectionDiagnostics {
     } finally {
       client.close(force: true);
     }
+  }
+
+  Future<SpeedTestResult> testSpeed({
+    int downloadBytes = 8 * 1024 * 1024,
+    int uploadBytes = 2 * 1024 * 1024,
+  }) async {
+    if (downloadBytes <= 0 || uploadBytes <= 0) {
+      throw ArgumentError('Speed test sizes must be greater than zero');
+    }
+    final baseUri = Uri.tryParse(speedTestBaseUrl);
+    if (baseUri == null || !baseUri.hasScheme || baseUri.host.isEmpty) {
+      throw const FormatException('Invalid speed test server URL');
+    }
+
+    final client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 8)
+      ..idleTimeout = const Duration(seconds: 10);
+    try {
+      final latencySamples = <Duration>[];
+      for (var attempt = 0; attempt < 3; attempt++) {
+        latencySamples.add(await _measureSpeedTestLatency(client, baseUri));
+      }
+      latencySamples.sort();
+      final latency = latencySamples[latencySamples.length ~/ 2];
+      final downloadRate = await _measureDownload(
+        client,
+        baseUri,
+        downloadBytes,
+      );
+      final uploadRate = await _measureUpload(
+        client,
+        baseUri,
+        uploadBytes,
+      );
+      return SpeedTestResult(
+        latency: latency,
+        downloadBytesPerSecond: downloadRate,
+        uploadBytesPerSecond: uploadRate,
+      );
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Future<Duration> _measureSpeedTestLatency(
+    HttpClient client,
+    Uri baseUri,
+  ) async {
+    final uri = _speedUri(baseUri, '__down', {'bytes': '0'});
+    final stopwatch = Stopwatch()..start();
+    final request = await client.getUrl(uri);
+    _setSpeedTestHeaders(request);
+    final response = await request.close().timeout(const Duration(seconds: 10));
+    await response.drain<void>().timeout(const Duration(seconds: 10));
+    stopwatch.stop();
+    _checkSpeedTestStatus(response);
+    return stopwatch.elapsed;
+  }
+
+  Future<int> _measureDownload(
+    HttpClient client,
+    Uri baseUri,
+    int requestedBytes,
+  ) async {
+    final uri = _speedUri(
+      baseUri,
+      '__down',
+      {'bytes': '$requestedBytes'},
+    );
+    final request = await client.getUrl(uri);
+    _setSpeedTestHeaders(request);
+    final stopwatch = Stopwatch()..start();
+    final response = await request.close().timeout(const Duration(seconds: 15));
+    final received = await response
+        .fold<int>(0, (total, chunk) => total + chunk.length)
+        .timeout(const Duration(seconds: 30));
+    stopwatch.stop();
+    _checkSpeedTestStatus(response);
+    if (received == 0) {
+      throw const HttpException('Speed test returned no download data');
+    }
+    return _bytesPerSecond(received, stopwatch.elapsed);
+  }
+
+  Future<int> _measureUpload(
+    HttpClient client,
+    Uri baseUri,
+    int uploadBytes,
+  ) async {
+    final uri = _speedUri(baseUri, '__up');
+    final request = await client.postUrl(uri);
+    _setSpeedTestHeaders(request);
+    request.headers.contentType = ContentType.binary;
+    request.contentLength = uploadBytes;
+    final payload = Uint8List(uploadBytes);
+    final stopwatch = Stopwatch()..start();
+    request.add(payload);
+    final response = await request.close().timeout(const Duration(seconds: 30));
+    await response.drain<void>().timeout(const Duration(seconds: 10));
+    stopwatch.stop();
+    _checkSpeedTestStatus(response);
+    return _bytesPerSecond(uploadBytes, stopwatch.elapsed);
+  }
+
+  Uri _speedUri(
+    Uri baseUri,
+    String path, [
+    Map<String, String> query = const {},
+  ]) {
+    final basePath = baseUri.path.endsWith('/')
+        ? baseUri.path.substring(0, baseUri.path.length - 1)
+        : baseUri.path;
+    return baseUri.replace(
+      path: '$basePath/$path',
+      queryParameters: {
+        ...query,
+        'measId': '${DateTime.now().microsecondsSinceEpoch}',
+      },
+    );
+  }
+
+  void _setSpeedTestHeaders(HttpClientRequest request) {
+    request.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
+    request.headers.set(HttpHeaders.userAgentHeader, 'TrueTun speed test');
+  }
+
+  void _checkSpeedTestStatus(HttpClientResponse response) {
+    if (response.statusCode < 200 || response.statusCode >= 400) {
+      throw HttpException(
+        'Speed test server returned HTTP ${response.statusCode}',
+      );
+    }
+  }
+
+  int _bytesPerSecond(int bytes, Duration elapsed) {
+    final microseconds = elapsed.inMicroseconds.clamp(1, 1 << 62);
+    return (bytes * Duration.microsecondsPerSecond / microseconds).round();
   }
 
   Future<TrafficSnapshot> readTraffic() async {

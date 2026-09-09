@@ -8,6 +8,7 @@ class ConnectionSnapshot {
     required this.platform,
     this.preferences = const CorePreferences(),
     this.routingRules = const [],
+    this.routingSettings = const RoutingSettings(),
     this.androidTunPatch = const {},
   });
 
@@ -15,5 +16,6 @@ class ConnectionSnapshot {
   final RoutingPlatform platform;
   final CorePreferences preferences;
   final List<RoutingRule> routingRules;
+  final RoutingSettings routingSettings;
   final Map<String, Object> androidTunPatch;
 }

@@ -59,19 +59,51 @@ class SingBoxConfigCompiler {
     }
 
     final routeRules = <Map<String, Object>>[
+      // TUN receives a destination IP after DNS resolution. Sniff the
+      // request's HTTP Host / TLS SNI / QUIC SNI before evaluating user
+      // domain rules, otherwise domain_suffix rules such as `.ru` cannot
+      // reliably match browser traffic.
+      <String, Object>{
+        'action': 'sniff',
+        'sniffer': <String>['http', 'tls', 'quic', 'dns'],
+      },
       <String, Object>{
         'port': <int>[53],
         'action': 'hijack-dns',
       },
-      ..._routingCompiler.compileRules(
-        snapshot.routingRules,
-        platform: snapshot.platform,
-      ),
+      // Browsers prefer QUIC for HTTPS. When the selected proxy server cannot
+      // carry UDP reliably, silently dropping those packets makes web-based
+      // speed tests wait for a long timeout. An explicit TUN rejection makes
+      // the browser immediately retry over TCP/HTTPS. Core transport sockets
+      // are protected from the TUN, so UDP-based outbounds are unaffected.
+      <String, Object>{
+        'network': <String>['udp'],
+        'port': <int>[443],
+        'action': 'reject',
+        'method': 'default',
+        'no_drop': true,
+      },
+      if (snapshot.routingSettings.enabled) ...[
+        ..._routingCompiler.compileRules(
+          snapshot.routingRules,
+          platform: snapshot.platform,
+        ),
+        if (snapshot.routingSettings.fallbackAction == RouteActionType.block)
+          <String, Object>{
+            'action': 'reject',
+            'method': 'drop',
+          },
+      ],
     ];
+
+    final fallbackOutbound = snapshot.routingSettings.enabled &&
+            snapshot.routingSettings.fallbackAction == RouteActionType.direct
+        ? 'direct'
+        : 'proxy';
 
     final route = <String, Object>{
       'rules': routeRules,
-      'final': 'proxy',
+      'final': fallbackOutbound,
       'default_domain_resolver': 'dns-direct',
       if (snapshot.platform == RoutingPlatform.linux ||
           snapshot.platform == RoutingPlatform.android)

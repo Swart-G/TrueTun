@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:truetun/src/android_dialogs.dart';
@@ -60,7 +58,8 @@ class _AndroidShellState extends State<_AndroidShell> {
     NavigationDestination(icon: Icon(Icons.alt_route), label: 'Routing'),
     NavigationDestination(icon: Icon(Icons.apps), label: 'Apps'),
     NavigationDestination(icon: Icon(Icons.article_outlined), label: 'Logs'),
-    NavigationDestination(icon: Icon(Icons.settings_outlined), label: 'Settings'),
+    NavigationDestination(
+        icon: Icon(Icons.settings_outlined), label: 'Settings'),
   ];
 
   @override
@@ -91,6 +90,7 @@ class _HomePage extends ConsumerWidget {
           coreState: state.coreState,
           error: state.error,
           latency: state.latency,
+          speedTestResult: state.speedTestResult,
           upload: state.upload,
           download: state.download,
           trafficHistory: state.trafficHistory,
@@ -192,12 +192,16 @@ class _HomePage extends ConsumerWidget {
         const SizedBox(height: 12),
         Card(
           child: ListTile(
-            leading: const Icon(Icons.network_check),
-            title: const Text('Connection test'),
+            leading: const Icon(Icons.speed),
+            title: const Text('Speed test'),
             subtitle: Text(
-              data.latency == null
-                  ? 'Not measured'
-                  : '${data.latency!.inMilliseconds} ms',
+              data.testing
+                  ? 'Measuring download and upload…'
+                  : data.speedTestResult == null
+                      ? 'Download + upload, about 10 MiB'
+                      : '↓ ${_formatMbps(data.speedTestResult!.downloadBytesPerSecond)}  '
+                          '↑ ${_formatMbps(data.speedTestResult!.uploadBytesPerSecond)}  '
+                          '• ${data.speedTestResult!.latency.inMilliseconds} ms',
             ),
             trailing: data.testing
                 ? const SizedBox.square(
@@ -205,7 +209,7 @@ class _HomePage extends ConsumerWidget {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.chevron_right),
-            onTap: running && !data.testing ? controller.testConnection : null,
+            onTap: running && !data.testing ? controller.testSpeed : null,
           ),
         ),
         const SizedBox(height: 12),
@@ -297,16 +301,14 @@ class _TrafficChart extends StatelessWidget {
         child: Text('Traffic samples will appear after connection'),
       );
     }
-    final visible = samples.length <= 60
-        ? samples
-        : samples.sublist(samples.length - 60);
+    final visible =
+        samples.length <= 60 ? samples : samples.sublist(samples.length - 60);
     final scheme = Theme.of(context).colorScheme;
     return CustomPaint(
       painter: _TrafficChartPainter(
         samples: visible,
         downloadColor: scheme.primary,
         uploadColor: scheme.tertiary,
-        gridColor: scheme.outlineVariant.withValues(alpha: 0.5),
       ),
     );
   }
@@ -317,49 +319,34 @@ class _TrafficChartPainter extends CustomPainter {
     required this.samples,
     required this.downloadColor,
     required this.uploadColor,
-    required this.gridColor,
   });
 
   final List<TrafficSample> samples;
   final Color downloadColor;
   final Color uploadColor;
-  final Color gridColor;
+
+  static const _visibleSlots = 60;
+  static const _maxBytesPerSecond = 16 * 1024 * 1024;
 
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty || samples.isEmpty) return;
 
-    final gridPaint = Paint()
-      ..color = gridColor
-      ..strokeWidth = 1;
-    for (var index = 1; index < 4; index++) {
-      final y = size.height * index / 4;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
-
-    var maxRate = 1;
-    for (final sample in samples) {
-      maxRate = math.max(maxRate, sample.downloadPerSecond);
-      maxRate = math.max(maxRate, sample.uploadPerSecond);
-    }
-
-    final downloadPath = Path();
-    final uploadPath = Path();
-    final denominator = math.max(1, samples.length - 1);
+    final downloadPoints = <Offset>[];
+    final uploadPoints = <Offset>[];
+    final firstSlot = _visibleSlots - samples.length;
     for (var index = 0; index < samples.length; index++) {
-      final x = size.width * index / denominator;
-      final downloadY = size.height *
-          (1 - samples[index].downloadPerSecond / maxRate);
-      final uploadY =
-          size.height * (1 - samples[index].uploadPerSecond / maxRate);
-      if (index == 0) {
-        downloadPath.moveTo(x, downloadY);
-        uploadPath.moveTo(x, uploadY);
-      } else {
-        downloadPath.lineTo(x, downloadY);
-        uploadPath.lineTo(x, uploadY);
-      }
+      final x = size.width * (firstSlot + index) / (_visibleSlots - 1);
+      double yFor(int value) =>
+          size.height * (1 - (value / _maxBytesPerSecond).clamp(0.0, 1.0));
+      downloadPoints.add(
+        Offset(x, yFor(samples[index].downloadPerSecond)),
+      );
+      uploadPoints.add(Offset(x, yFor(samples[index].uploadPerSecond)));
     }
+
+    final downloadPath = _smoothPath(downloadPoints);
+    final uploadPath = _smoothPath(uploadPoints);
 
     canvas.drawPath(
       downloadPath,
@@ -385,8 +372,29 @@ class _TrafficChartPainter extends CustomPainter {
   bool shouldRepaint(covariant _TrafficChartPainter oldDelegate) {
     return oldDelegate.samples != samples ||
         oldDelegate.downloadColor != downloadColor ||
-        oldDelegate.uploadColor != uploadColor ||
-        oldDelegate.gridColor != gridColor;
+        oldDelegate.uploadColor != uploadColor;
+  }
+
+  Path _smoothPath(List<Offset> points) {
+    final path = Path();
+    if (points.isEmpty) return path;
+    path.moveTo(points.first.dx, points.first.dy);
+    for (var index = 1; index < points.length; index++) {
+      final previous = points[index - 1];
+      final current = points[index];
+      final midpoint = Offset(
+        (previous.dx + current.dx) / 2,
+        (previous.dy + current.dy) / 2,
+      );
+      path.quadraticBezierTo(
+        previous.dx,
+        previous.dy,
+        midpoint.dx,
+        midpoint.dy,
+      );
+    }
+    path.lineTo(points.last.dx, points.last.dy);
+    return path;
   }
 }
 
@@ -519,9 +527,15 @@ class _RoutingPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final rules = ref.watch(
-      appControllerProvider.select((state) => state.routingRules),
+    final data = ref.watch(
+      appControllerProvider.select(
+        (state) => (
+          rules: state.routingRules,
+          settings: state.routingSettings,
+        ),
+      ),
     );
+    final rules = data.rules;
     final controller = ref.read(appControllerProvider.notifier);
 
     return Scaffold(
@@ -538,83 +552,138 @@ class _RoutingPage extends ConsumerWidget {
           ),
         ],
       ),
-      body: rules.isEmpty
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(28),
-                child: Text(
-                  'Rules are evaluated from top to bottom. Without custom '
-                  'rules, traffic uses the selected proxy.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
-              itemCount: rules.length,
-              itemBuilder: (context, index) {
-                final rule = rules[index];
-                return Card(
-                  child: ListTile(
-                    enabled: rule.enabled,
-                    title: Text(rule.name),
+      body: ListView.builder(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+        itemCount: rules.length + 2,
+        itemBuilder: (context, listIndex) {
+          if (listIndex == 0) {
+            return Card(
+              child: Column(
+                children: [
+                  SwitchListTile(
+                    secondary: const Icon(Icons.alt_route),
+                    title: const Text('Routing mode'),
                     subtitle: Text(
-                      '${_ruleSummary(rule)} → ${_actionLabel(rule.action)}',
+                      data.settings.enabled
+                          ? 'Apply the rules below'
+                          : 'Disabled — rules below are not applied',
                     ),
-                    onTap: () async {
-                      final updated = await showTrueTunRoutingRuleDialog(
-                        context,
-                        existing: rule,
-                      );
-                      if (updated != null) {
-                        await controller.updateRoutingRule(updated);
-                      }
-                    },
-                    trailing: PopupMenuButton<String>(
-                      onSelected: (action) async {
-                        if (action == 'up' && index > 0) {
-                          await controller.reorderRoutingRule(index, index - 1);
-                        } else if (action == 'down' && index < rules.length - 1) {
-                          await controller.reorderRoutingRule(index, index + 2);
-                        } else if (action == 'toggle') {
-                          await controller.updateRoutingRule(
-                            RoutingRule(
-                              id: rule.id,
-                              name: rule.name,
-                              matcher: rule.matcher,
-                              action: rule.action,
-                              enabled: !rule.enabled,
-                            ),
-                          );
-                        } else if (action == 'delete') {
-                          await controller.deleteRoutingRule(rule.id);
-                        }
-                      },
-                      itemBuilder: (context) => [
-                        if (index > 0)
-                          const PopupMenuItem(
-                            value: 'up',
-                            child: Text('Move up'),
-                          ),
-                        if (index < rules.length - 1)
-                          const PopupMenuItem(
-                            value: 'down',
-                            child: Text('Move down'),
-                          ),
-                        PopupMenuItem(
-                          value: 'toggle',
-                          child: Text(rule.enabled ? 'Disable' : 'Enable'),
-                        ),
-                        const PopupMenuItem(
-                          value: 'delete',
-                          child: Text('Delete'),
-                        ),
-                      ],
+                    value: data.settings.enabled,
+                    onChanged: (enabled) => controller.updateRoutingSettings(
+                      data.settings.copyWith(enabled: enabled),
                     ),
                   ),
+                  const Divider(height: 1),
+                  ListTile(
+                    enabled: data.settings.enabled,
+                    title: const Text('All other traffic'),
+                    subtitle: const Text('When no rule matches'),
+                    trailing: DropdownButton<RouteActionType>(
+                      value: data.settings.fallbackAction,
+                      items: const [
+                        DropdownMenuItem(
+                          value: RouteActionType.proxy,
+                          child: Text('Proxy'),
+                        ),
+                        DropdownMenuItem(
+                          value: RouteActionType.direct,
+                          child: Text('Direct'),
+                        ),
+                        DropdownMenuItem(
+                          value: RouteActionType.block,
+                          child: Text('Block'),
+                        ),
+                      ],
+                      onChanged: data.settings.enabled
+                          ? (action) {
+                              if (action != null) {
+                                controller.updateRoutingSettings(
+                                  data.settings.copyWith(
+                                    fallbackAction: action,
+                                  ),
+                                );
+                              }
+                            }
+                          : null,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+          if (listIndex == 1) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+              child: Text(
+                rules.isEmpty
+                    ? 'No rules yet'
+                    : 'Rules are applied from top to bottom',
+              ),
+            );
+          }
+          final index = listIndex - 2;
+          final rule = rules[index];
+          return Card(
+            child: ListTile(
+              enabled: rule.enabled,
+              title: Text(rule.name),
+              subtitle: Text(
+                '${_ruleSummary(rule)} → ${_actionLabel(rule.action)}',
+              ),
+              onTap: () async {
+                final updated = await showTrueTunRoutingRuleDialog(
+                  context,
+                  existing: rule,
                 );
+                if (updated != null) {
+                  await controller.updateRoutingRule(updated);
+                }
               },
+              trailing: PopupMenuButton<String>(
+                onSelected: (action) async {
+                  if (action == 'up' && index > 0) {
+                    await controller.reorderRoutingRule(index, index - 1);
+                  } else if (action == 'down' && index < rules.length - 1) {
+                    await controller.reorderRoutingRule(index, index + 2);
+                  } else if (action == 'toggle') {
+                    await controller.updateRoutingRule(
+                      RoutingRule(
+                        id: rule.id,
+                        name: rule.name,
+                        matcher: rule.matcher,
+                        action: rule.action,
+                        enabled: !rule.enabled,
+                      ),
+                    );
+                  } else if (action == 'delete') {
+                    await controller.deleteRoutingRule(rule.id);
+                  }
+                },
+                itemBuilder: (context) => [
+                  if (index > 0)
+                    const PopupMenuItem(
+                      value: 'up',
+                      child: Text('Move up'),
+                    ),
+                  if (index < rules.length - 1)
+                    const PopupMenuItem(
+                      value: 'down',
+                      child: Text('Move down'),
+                    ),
+                  PopupMenuItem(
+                    value: 'toggle',
+                    child: Text(rule.enabled ? 'Disable' : 'Enable'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Delete'),
+                  ),
+                ],
+              ),
             ),
+          );
+        },
+      ),
     );
   }
 }
@@ -1051,6 +1120,9 @@ IconData _categoryIcon(AppCategory category) => switch (category) {
 
 String _formatRate(int bytesPerSecond) => '${_formatBytes(bytesPerSecond)}/s';
 
+String _formatMbps(int bytesPerSecond) =>
+    '${(bytesPerSecond * 8 / 1000000).toStringAsFixed(1)} Mbps';
+
 String _formatBytes(int bytes) {
   if (bytes < 1024) return '$bytes B';
   const units = ['KiB', 'MiB', 'GiB', 'TiB'];
@@ -1060,6 +1132,10 @@ String _formatBytes(int bytes) {
     value /= 1024;
     unit++;
   } while (value >= 1024 && unit < units.length - 1);
-  final digits = value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  final digits = value >= 100
+      ? 0
+      : value >= 10
+          ? 1
+          : 2;
   return '${value.toStringAsFixed(digits)} ${units[unit]}';
 }

@@ -37,7 +37,11 @@ class SingBoxRoutingCompiler {
     final result = <String, Object>{};
 
     _putStrings(result, 'domain', matcher.domains);
-    _putStrings(result, 'domain_suffix', matcher.domainSuffixes);
+    _putStrings(
+      result,
+      'domain_suffix',
+      matcher.domainSuffixes.map(_normalizeDomainSuffix).toList(),
+    );
     _putStrings(result, 'domain_keyword', matcher.domainKeywords);
     _putStrings(result, 'domain_regex', matcher.domainRegexes);
     _putStrings(result, 'ip_cidr', matcher.ipCidrs);
@@ -117,5 +121,11 @@ class SingBoxRoutingCompiler {
 
   void _putInts(Map<String, Object> target, String key, List<int> values) {
     if (values.isNotEmpty) target[key] = values;
+  }
+
+  String _normalizeDomainSuffix(String raw) {
+    final value = raw.trim().toLowerCase();
+    if (value.startsWith('*.')) return '.${value.substring(2)}';
+    return value.startsWith('.') ? value : '.$value';
   }
 }

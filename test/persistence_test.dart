@@ -3,10 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:truetun/src/persistence/app_database.dart';
 import 'package:truetun/src/persistence/profile_repository.dart';
+import 'package:truetun/src/persistence/routing_settings_repository.dart';
 import 'package:truetun/src/profiles/hysteria2_profile_parser.dart';
 import 'package:truetun/src/profiles/profile_group.dart';
 import 'package:truetun/src/profiles/proxy_node.dart';
 import 'package:truetun/src/profiles/vless_link_parser.dart';
+import 'package:truetun/src/routing/routing_rule.dart';
 
 void main() {
   late AppDatabase database;
@@ -62,6 +64,20 @@ void main() {
     final hy2 = restoredNode as Hysteria2Node;
     expect(hy2.password, 'password');
     expect(hy2.obfs?.password, 'mask');
+  });
+
+  test('routing mode and fallback action survive reload', () async {
+    final repository = RoutingSettingsRepository(database: database);
+    const settings = RoutingSettings(
+      enabled: true,
+      fallbackAction: RouteActionType.direct,
+    );
+
+    await repository.saveRoutingSettings(settings);
+    final restored = await repository.loadRoutingSettings();
+
+    expect(restored.enabled, isTrue);
+    expect(restored.fallbackAction, RouteActionType.direct);
   });
 
   tearDown(() => database.close());

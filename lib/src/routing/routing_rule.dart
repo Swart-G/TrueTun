@@ -10,6 +10,26 @@ enum RouteActionType {
   block,
 }
 
+class RoutingSettings {
+  const RoutingSettings({
+    this.enabled = false,
+    this.fallbackAction = RouteActionType.proxy,
+  });
+
+  final bool enabled;
+  final RouteActionType fallbackAction;
+
+  RoutingSettings copyWith({
+    bool? enabled,
+    RouteActionType? fallbackAction,
+  }) {
+    return RoutingSettings(
+      enabled: enabled ?? this.enabled,
+      fallbackAction: fallbackAction ?? this.fallbackAction,
+    );
+  }
+}
+
 class RouteAction {
   const RouteAction._(this.type, this.outboundTag);
 
