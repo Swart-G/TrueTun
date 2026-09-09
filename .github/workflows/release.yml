@@ -11,7 +11,7 @@ permissions:
   contents: write
 
 env:
-  TRUETUN_VERSION: 0.4.0
+  TRUETUN_VERSION: 0.4.1
 
 jobs:
   release:
@@ -78,31 +78,31 @@ jobs:
             exit 1
           fi
           cat > release-notes.md <<'EOF'
-          ## TrueTun 0.4.0
+          ## TrueTun 0.4.1
 
-          First combined Android + Linux stable GitHub release.
+          Routing and browser speed-test reliability update for Android and Linux.
 
           ### Android
-          - Real Android `VpnService` and TUN backed by pinned `sing-box-lx 1.14.0-lx.35` libbox.
-          - VLESS/Reality, XHTTP and Hysteria2 connection paths.
-          - Subscriptions, persistence, ordered routing and per-app whitelist/blacklist routing.
-          - Foreground VPN service, native state/traffic events and optimized traffic graph.
-          - Fix for the Flutter dialog lifecycle crash found during beta device testing.
+          - Added a separate routing-mode switch and Proxy, Direct or Block fallback for unmatched traffic.
+          - Reworked rule creation into condition type → parameter → add, including domains, IP/CIDR, ports, protocols and Android packages.
+          - Added traffic sniffing so domain suffix rules such as `.ru` can match HTTP Host, TLS SNI and QUIC SNI from TUN traffic.
+          - Improved browser speed-test compatibility by making broken QUIC attempts fall back promptly to TCP/HTTPS.
+          - Added an actual in-app download/upload speed test with latency reporting.
+          - Fixed the traffic chart to a 16 MiB/s scale and 60-sample window, removed the grid and smoothed the lines.
 
           ### Linux x86_64
-          - Release-mode Flutter desktop bundle with pinned XHTTP-capable sing-box-lx.
-          - TUN through a narrow privileged helper while the GUI stays unprivileged.
-          - Profiles/subscriptions, traffic, logs, tray and autostart.
-          - Ordered domain/IP/port/protocol routing plus Linux process-name/path/regex rules.
-          - Desktop-menu installer and cleanup helper included.
+          - Added the same routing-mode switch, unmatched-traffic action and condition-based rule editor.
+          - Added domain sniffing and browser speed-test reliability fixes shared with Android.
+          - Added the real download/upload speed test and fixed-scale smoothed traffic chart.
+          - Linux process-name, process-path and regex matchers remain available in the rule editor.
 
           ### Integrity and source
           `SHA256SUMS.txt` covers the Android APK, Linux archive and attached sing-box-lx corresponding-source archive. `THIRD_PARTY_NOTICES.md` records exact runtime provenance.
 
           ### Installation
-          **Android:** install `TrueTun-android-v0.4.0.apk`. This GitHub build uses the project's test signing key unless a production keystore is supplied to the Gradle build.
+          **Android:** install `TrueTun-android-v0.4.1.apk`. This GitHub build uses the project's test signing key unless a production keystore is supplied to the Gradle build.
 
-          **Linux:** unpack `TrueTun-linux-x86_64-v0.4.0.tar.gz` and run `./truetun`. The first launch uses PolicyKit once to prepare the privileged TUN helper. `./install-desktop.sh` adds the application-menu entry; `./uninstall.sh` removes desktop/autostart integration and the privileged helper.
+          **Linux:** unpack `TrueTun-linux-x86_64-v0.4.1.tar.gz` and run `./truetun`. The first launch uses PolicyKit once to prepare the privileged TUN helper. `./install-desktop.sh` adds the application-menu entry; `./uninstall.sh` removes desktop/autostart integration and the privileged helper.
 
           CI validates Flutter analysis/tests and builds both release artifacts. Runtime network behavior can still depend on the Android vendor kernel, Linux distribution, firewall, DNS and network policy.
           EOF

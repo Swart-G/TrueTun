@@ -69,7 +69,7 @@ Rules are stored independently of the core and compiled when a connection starts
 
 ### Android
 
-Download `TrueTun-android-v0.4.0.apk` from the GitHub `v0.4.0` release and install it. Android will request VPN permission on the first connection.
+Download `TrueTun-android-v0.4.1.apk` from the GitHub `v0.4.1` release and install it. Android will request VPN permission on the first connection.
 
 GitHub source releases fall back to the project test signing key when production signing secrets are not configured. The Gradle build supports a production keystore through `TRUETUN_KEYSTORE_PATH`, `TRUETUN_KEYSTORE_PASSWORD`, `TRUETUN_KEY_ALIAS` and `TRUETUN_KEY_PASSWORD`.
 
@@ -110,7 +110,7 @@ flutter test
 Linux self-contained release packaging:
 
 ```bash
-TRUETUN_VERSION=0.4.0 bash tool/package_linux_release.sh
+TRUETUN_VERSION=0.4.1 bash tool/package_linux_release.sh
 ```
 
 The release packager downloads an exact sing-box-lx archive and verifies its SHA-256 before embedding it. Android Gradle does the same for the exact libbox AAR.

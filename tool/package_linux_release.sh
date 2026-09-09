@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 readonly flutter_bin="${FLUTTER_BIN:-flutter}"
-readonly version="${TRUETUN_VERSION:-0.4.0}"
+readonly version="${TRUETUN_VERSION:-0.4.1}"
 readonly core_version="1.14.0-lx.35"
 
 case "$(uname -m)" in
