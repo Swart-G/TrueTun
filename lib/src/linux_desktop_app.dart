@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:truetun/src/application/app_state.dart';
 import 'package:truetun/src/core/core_adapter.dart';
 import 'package:truetun/src/core/core_preferences.dart';
-import 'package:truetun/src/profiles/profile_group.dart';
 import 'package:truetun/src/routing/routing_rule.dart';
 
 class TrueTunLinuxApp extends StatelessWidget {
@@ -1498,13 +1497,17 @@ class _ChoiceDialog extends StatelessWidget {
     return SimpleDialog(
       title: Text(title),
       children: [
-        for (final value in values)
-          RadioListTile<String>(
-            value: value,
-            groupValue: current,
-            title: Text(value),
-            onChanged: (selected) => Navigator.pop(context, selected),
+        RadioGroup<String>(
+          groupValue: current,
+          onChanged: (selected) => Navigator.pop(context, selected),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final value in values)
+                RadioListTile<String>(value: value, title: Text(value)),
+            ],
           ),
+        ),
       ],
     );
   }
