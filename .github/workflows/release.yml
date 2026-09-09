@@ -72,7 +72,7 @@ jobs:
           cache: true
       - run: flutter pub get
       - name: Build Linux release bundle
-        run: tool/package_linux_release.sh
+        run: bash tool/package_linux_release.sh
       - name: Smoke-check Linux bundle
         run: |
           test -x "dist/TrueTun-linux-x86_64-v${TRUETUN_VERSION}/truetun"
