@@ -13,6 +13,17 @@ val libboxUrl =
     "https://github.com/Leadaxe/sing-box-lx/releases/download/v$libboxVersion/libbox-$libboxVersion.aar"
 val libboxAar = layout.buildDirectory.file("generated/libbox/libbox-$libboxVersion.aar")
 
+val releaseKeystorePath = System.getenv("TRUETUN_KEYSTORE_PATH")?.trim().orEmpty()
+val releaseKeystorePassword = System.getenv("TRUETUN_KEYSTORE_PASSWORD")?.trim().orEmpty()
+val releaseKeyAlias = System.getenv("TRUETUN_KEY_ALIAS")?.trim().orEmpty()
+val releaseKeyPassword = System.getenv("TRUETUN_KEY_PASSWORD")?.trim().orEmpty()
+val hasReleaseSigning = listOf(
+    releaseKeystorePath,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword,
+).all { it.isNotEmpty() }
+
 fun sha256(file: File): String {
     val digest = MessageDigest.getInstance("SHA-256")
     file.inputStream().use { input ->
@@ -76,10 +87,27 @@ android {
         buildConfigField("String", "LIBBOX_VARIANT", "\"sing-box-lx-$libboxVersion\"")
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("productionRelease") {
+                storeFile = file(releaseKeystorePath)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: replace the test key with a production signing configuration.
-            signingConfig = signingConfigs.getByName("debug")
+            // CI/GitHub source releases remain installable without repository
+            // secrets by falling back to the stable project test key. Official
+            // store/distribution builds should provide TRUETUN_KEYSTORE_* vars.
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("productionRelease")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
